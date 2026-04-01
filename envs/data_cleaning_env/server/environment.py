@@ -1,6 +1,12 @@
 import uuid
-from typing import Any, Dict, List, Optional
+import sys
+import os
+from typing import Any, Dict, List
 from copy import deepcopy
+
+# Fix path so 'tasks' module can be found
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from tasks.graders import TASKS
 
 
 class DataCleaningEnvironment:
@@ -22,8 +28,6 @@ class DataCleaningEnvironment:
 
     def reset(self, task_name: str = "easy") -> Dict[str, Any]:
         """Start a new episode with the given task."""
-        from tasks.graders import TASKS
-
         if task_name not in TASKS:
             raise ValueError(f"Unknown task: {task_name}. Choose from {list(TASKS.keys())}")
 
@@ -54,7 +58,7 @@ class DataCleaningEnvironment:
                 current_row[column] = value
                 reward += 0.3
             else:
-                reward -= 0.1  # Penalize unnecessary action
+                reward -= 0.1
 
         elif action_type == "fix_type":
             try:
@@ -97,7 +101,7 @@ class DataCleaningEnvironment:
         elif action_type == "remove_outlier":
             val = current_row.get(column)
             if val is not None and (val > 200000 or val < 0):
-                current_row[column] = 70000  # Replace with median
+                current_row[column] = 70000
                 reward += 0.4
             else:
                 reward -= 0.1
@@ -111,10 +115,10 @@ class DataCleaningEnvironment:
                 reward -= 0.1
 
         elif action_type == "skip":
-            reward -= 0.2  # Penalize skipping
+            reward -= 0.2
 
         else:
-            reward -= 0.3  # Unknown action
+            reward -= 0.3
 
         self.cleaned_data.append(current_row)
         self.current_row_index += 1
