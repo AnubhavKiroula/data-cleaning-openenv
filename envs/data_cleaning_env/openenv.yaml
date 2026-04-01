@@ -1,0 +1,52 @@
+name: data-cleaning-env
+version: "1.0.0"
+description: >
+  A real-world data cleaning environment where an AI agent
+  fixes messy datasets by handling missing values, duplicates,
+  type errors, outliers, and inconsistent categories.
+
+author: your-name
+license: MIT
+
+tasks:
+  - id: easy
+    name: Fix Missing Values
+    difficulty: easy
+    description: Fill missing values and fix wrong data types
+
+  - id: medium
+    name: Remove Duplicates and Fix Formatting
+    difficulty: medium
+    description: Remove duplicate rows and standardize text formatting
+
+  - id: hard
+    name: Full Data Cleaning
+    difficulty: hard
+    description: Fix all issues including outliers and inconsistent categories
+
+action_space:
+  type: discrete
+  actions:
+    - fill_missing
+    - fix_type
+    - remove_duplicate
+    - fix_category
+    - remove_outlier
+    - fix_formatting
+    - skip
+
+observation_space:
+  current_row: int
+  total_rows: int
+  current_data: object
+  issues_detected: list
+  legal_actions: list
+  progress: float
+  reward: float
+  done: bool
+
+endpoints:
+  reset: POST /reset
+  step: POST /step
+  state: GET /state
+  health: GET /health
