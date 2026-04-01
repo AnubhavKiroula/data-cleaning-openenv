@@ -223,6 +223,6 @@ data-cleaning-openenv/
 
 ## 🤗 HuggingFace Space
 
-Live environment: [huggingface.co/spaces/AnubhavKiroula/data-cleaning-openenv](#)
+Live environment: https://01ammu-data-cleaning-openenv.hf.space
 
 Health check: `GET /health` → `{"status": "ok"}`
