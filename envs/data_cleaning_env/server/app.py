@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Any, Optional
-from environment import DataCleaningEnvironment
+from server.environment import DataCleaningEnvironment
 
 app = FastAPI(title="Data Cleaning OpenEnv")
 env = DataCleaningEnvironment()
