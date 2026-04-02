@@ -167,21 +167,21 @@ python inference.py
 
 **Reset to easy task:**
 ```bash
-curl -X POST http://localhost:7860/reset \
+curl.exe -X POST http://localhost:7860/reset \
   -H "Content-Type: application/json" \
   -d '{"task_name": "easy"}'
 ```
 
 **Take a step:**
 ```bash
-curl -X POST http://localhost:7860/step \
+curl.exe -X POST http://localhost:7860/step \
   -H "Content-Type: application/json" \
   -d '{"action_type": "fill_missing", "column": "age", "value": 30}'
 ```
 
 **Check state:**
 ```bash
-curl http://localhost:7860/state
+curl.exe http://localhost:7860/state
 ```
 
 ---
