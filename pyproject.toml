@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "data-cleaning-openenv"
+version = "1.0.0"
+description = "A real-world data cleaning RL environment following the OpenEnv spec"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "AnubhavKiroula" }
+]
+keywords = ["reinforcement-learning", "openenv", "data-cleaning", "rl-environment"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "requests",
+    "openai",
+]
+
+[project.urls]
+Homepage = "https://huggingface.co/spaces/01ammu/data-cleaning-openenv"
+Repository = "https://github.com/AnubhavKiroula/data-cleaning-openenv"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["envs*"]
