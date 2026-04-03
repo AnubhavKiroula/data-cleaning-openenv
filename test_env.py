@@ -1,13 +1,12 @@
 import requests
 
-base = "http://localhost:8000"
+base = "http://localhost:7860"
 
 def run_task(task_name):
     print(f"\n{'='*50}")
     print(f"TASK: {task_name.upper()}")
     print(f"{'='*50}")
 
-    # Reset
     obs = requests.post(f"{base}/reset", json={"task_name": task_name}).json()
     print(f"Total rows: {obs['total_rows']}")
 
@@ -16,21 +15,37 @@ def run_task(task_name):
         print(f"  Issues: {obs['issues_detected']}")
         print(f"  Legal actions: {obs['legal_actions']}")
 
-        # Simple rule-based agent
-        action = {"action_type": "skip", "column": list(obs["current_data"].keys())[0], "value": None}
+        issues = obs["issues_detected"]
+        legal  = obs["legal_actions"]
+        data   = obs["current_data"]
+        first_col = list(data.keys())[0]
 
-        if "missing:age" in obs["issues_detected"]:
+        # Default
+        action = {"action_type": "skip", "column": first_col, "value": None}
+
+        if "missing:age" in issues and "fill_missing" in legal:
             action = {"action_type": "fill_missing", "column": "age", "value": 30}
-        elif "missing:salary" in obs["issues_detected"]:
+        elif "missing:salary" in issues and "fill_missing" in legal:
             action = {"action_type": "fill_missing", "column": "salary", "value": 60000}
-        elif "missing:name" in obs["issues_detected"]:
+        elif "missing:score" in issues and "fill_missing" in legal:
+            action = {"action_type": "fill_missing", "column": "score", "value": 80}
+        elif "missing:name" in issues and "fill_missing" in legal:
             action = {"action_type": "fill_missing", "column": "name", "value": "unknown"}
-        elif "wrong_type:score" in obs["issues_detected"]:
+        elif "wrong_type:score" in issues and "fix_type" in legal:
             action = {"action_type": "fix_type", "column": "score", "value": None}
-        elif "formatting:email" in obs["issues_detected"]:
+        elif "formatting:email" in issues and "fix_formatting" in legal:
             action = {"action_type": "fix_formatting", "column": "email", "value": None}
+        elif "formatting:name" in issues and "fix_formatting" in legal:
+            action = {"action_type": "fix_formatting", "column": "name", "value": None}
+        elif "formatting:dept" in issues and "fix_category" in legal:
+            action = {"action_type": "fix_category", "column": "dept", "value": None}
 
-        obs = requests.post(f"{base}/step", json=action).json()
+        response = requests.post(f"{base}/step", json=action)
+        if response.status_code != 200 or not response.text:
+            print(f"  ERROR: server returned {response.status_code} — {response.text}")
+            break
+
+        obs = response.json()
         print(f"  Action: {action['action_type']} | Reward: {obs['reward']}")
 
     state = requests.get(f"{base}/state").json()
@@ -38,7 +53,6 @@ def run_task(task_name):
     print(f"  Total Reward: {state['total_reward']}")
     return state["score"]
 
-# Run all 3 tasks
 scores = {}
 for task in ["easy", "medium", "hard"]:
     scores[task] = run_task(task)

@@ -2,13 +2,20 @@ import json
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Any, Optional
-from server.environment import DataCleaningEnvironment
+
+try:
+    from server.environment import DataCleaningEnvironment
+except ModuleNotFoundError:
+    from environment import DataCleaningEnvironment
 
 app = FastAPI(
     title="Data Cleaning OpenEnv",
-    description="A real-world data cleaning RL environment following the OpenEnv spec.",
+    description="A real-world data cleaning RL environment.",
     version="1.0.0",
 )
+
+# ✅ Single shared instance — persists across requests
+env = DataCleaningEnvironment()
 
 
 class ResetRequest(BaseModel):
@@ -21,14 +28,9 @@ class StepRequest(BaseModel):
     value: Optional[Any] = None
 
 
-# ------------------------------------------------------------------ #
-#  HTTP endpoints (stateless)                                          #
-# ------------------------------------------------------------------ #
-
 @app.post("/reset")
 def reset(request: ResetRequest):
     try:
-        env = DataCleaningEnvironment()
         return env.reset(task_name=request.task_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -37,7 +39,6 @@ def reset(request: ResetRequest):
 @app.post("/step")
 def step(request: StepRequest):
     try:
-        env = DataCleaningEnvironment()
         return env.step(
             action_type=request.action_type,
             column=request.column,
@@ -49,7 +50,6 @@ def step(request: StepRequest):
 
 @app.get("/state")
 def state():
-    env = DataCleaningEnvironment()
     return env.get_state()
 
 
@@ -60,7 +60,12 @@ def health():
 
 @app.get("/tasks")
 def list_tasks():
-    from tasks.graders import TASKS
+    try:
+        from tasks.graders import TASKS
+    except ModuleNotFoundError:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from tasks.graders import TASKS
     return {
         k: {
             "name": v["name"],
@@ -71,45 +76,24 @@ def list_tasks():
     }
 
 
-# ------------------------------------------------------------------ #
-#  WebSocket endpoint — persistent session (OpenEnv spec)             #
-# ------------------------------------------------------------------ #
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    Persistent WebSocket session for efficient RL training.
-    Each connection gets its own isolated environment instance.
-
-    Message format (client → server):
-        {"type": "reset", "task_name": "easy"}
-        {"type": "step", "action_type": "fill_missing", "column": "age", "value": 30}
-        {"type": "state"}
-        {"type": "health"}
-
-    Response format (server → client):
-        Standard observation/state dict with added "status": "ok"
-    """
     await websocket.accept()
-    env = DataCleaningEnvironment()  # Isolated instance per connection
-
+    ws_env = DataCleaningEnvironment()  # isolated per connection
     try:
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
             msg_type = message.get("type")
-
             if msg_type == "reset":
-                task_name = message.get("task_name", "easy")
                 try:
-                    result = env.reset(task_name=task_name)
+                    result = ws_env.reset(task_name=message.get("task_name", "easy"))
                     await websocket.send_json({"status": "ok", **result})
                 except ValueError as e:
                     await websocket.send_json({"status": "error", "detail": str(e)})
-
             elif msg_type == "step":
                 try:
-                    result = env.step(
+                    result = ws_env.step(
                         action_type=message.get("action_type"),
                         column=message.get("column"),
                         value=message.get("value"),
@@ -117,19 +101,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"status": "ok", **result})
                 except ValueError as e:
                     await websocket.send_json({"status": "error", "detail": str(e)})
-
             elif msg_type == "state":
-                result = env.get_state()
-                await websocket.send_json({"status": "ok", **result})
-
+                await websocket.send_json({"status": "ok", **ws_env.get_state()})
             elif msg_type == "health":
                 await websocket.send_json({"status": "ok", "message": "healthy"})
-
             else:
-                await websocket.send_json({
-                    "status": "error",
-                    "detail": f"Unknown message type: {msg_type}. Use reset/step/state/health."
-                })
-
+                await websocket.send_json({"status": "error", "detail": f"Unknown type: {msg_type}"})
     except WebSocketDisconnect:
-        pass  # Client disconnected cleanly — environment instance is garbage collected
+        pass

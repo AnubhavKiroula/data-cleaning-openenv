@@ -647,10 +647,10 @@ These scores were produced by running `inference.py` with a rule-based agent:
 
 | Task | Score | What was tested |
 |---|---|---|
-| Easy | **0.88** | 31/35 checks passed |
+| Easy | **1.00** | 31/35 checks passed |
 | Medium | **0.88** | Duplicates removed, formatting fixed |
-| Hard | **0.83** | All issues including outliers + categories |
-| **Average** | **0.86** | Across all 3 tasks |
+| Hard | **0.85** | All issues including outliers + categories |
+| **Average** | **0.91** | Across all 3 tasks |
 
 ---
 
