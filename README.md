@@ -117,10 +117,10 @@ Scores from the baseline inference script (`inference.py`) using rule-based acti
 
 | Task | Score |
 |---|---|
-| Easy | **1.00** |
+| Easy | **0.88** |
 | Medium | **0.88** |
-| Hard | **0.85** |
-| **Average** | **0.91** |
+| Hard | **0.75** |
+| **Average** | **0.85** |
 
 ---
 

@@ -15,15 +15,21 @@ TASKS = ["easy", "medium", "hard"]
 
 def ask_llm(observation: dict) -> dict:
     """Ask the LLM what cleaning action to take."""
+    
+    # Get first column as fallback
+    columns = list(observation['current_data'].keys())
+    first_column = columns[0] if columns else "id"
+    
     prompt = f"""
 You are a data cleaning agent. You receive a row of data and must clean it.
 
 Current row data: {observation['current_data']}
 Issues detected: {observation['issues_detected']}
 Legal actions: {observation['legal_actions']}
+Available columns: {columns}
 
 Choose ONE action from the legal actions list.
-Respond in this exact JSON format:
+Respond in this exact JSON format with ALL three fields always present:
 {{
   "action_type": "fill_missing",
   "column": "age",
@@ -32,14 +38,11 @@ Respond in this exact JSON format:
 
 Rules:
 - action_type must be from legal_actions list
-- column must be a key in current_data
-- value is required for fill_missing, optional for others
+- column must ALWAYS be one of: {columns}
+- value is required for fill_missing, optional for others (use null if not needed)
 - For fill_missing: provide a sensible default value
-- For fix_type: no value needed
-- For remove_duplicate: no value needed
-- For fix_category: no value needed
-- For remove_outlier: no value needed
-- For fix_formatting: no value needed
+- For skip: still include column field using first available column
+- ALWAYS include all three fields: action_type, column, value
 """
     response = client.chat.completions.create(
         model=MODEL_NAME,
@@ -49,9 +52,18 @@ Rules:
 
     import json
     text = response.choices[0].message.content.strip()
-    # Strip markdown if present
     text = text.replace("```json", "").replace("```", "").strip()
-    return json.loads(text)
+    parsed = json.loads(text)
+    
+    # Safety fallbacks
+    if "column" not in parsed or not parsed["column"]:
+        parsed["column"] = first_column
+    if "value" not in parsed:
+        parsed["value"] = None
+    if parsed.get("column") not in columns:
+        parsed["column"] = first_column
+        
+    return parsed
 
 
 def run_task(task_name: str) -> float:
