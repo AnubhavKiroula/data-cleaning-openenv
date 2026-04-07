@@ -8,15 +8,15 @@ RUN pip install --no-cache-dir \
     uvicorn \
     requests \
     openai \
-    pydantic \
-    fastmcp
+    pydantic
 
 # Copy environment code
 COPY envs/data_cleaning_env/server/ ./server/
 COPY envs/data_cleaning_env/tasks/ ./tasks/
 
-# Copy inference script
+# Copy required files
 COPY inference.py .
+COPY openenv.yaml .
 
 # Expose port
 EXPOSE 7860
