@@ -24,7 +24,11 @@ dependencies = [
     "pydantic",
     "requests",
     "openai",
+    "openenv-core>=0.2.0",
 ]
+
+[project.scripts]
+server = "server.app:app"
 
 [project.urls]
 Homepage = "https://huggingface.co/spaces/01ammu/data-cleaning-openenv"
