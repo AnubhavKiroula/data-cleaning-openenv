@@ -1,26 +1,14 @@
+"""
+Test version of inference.py that uses rule-based actions (no LLM)
+to verify the structured logging format matches requirements exactly.
+"""
 import os
 import requests
-from openai import OpenAI
 from typing import List, Optional
 
-# Load .env file if present (for local development)
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # dotenv not required in production
-
-# ── Config ──────────────────────────────────────────────────────────────
-# Mandatory environment variables per hackathon requirements
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")  # Default to local env
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")                # Default model
-HF_TOKEN = os.getenv("HF_TOKEN")                                    # No default - required
-
-# OpenAI client configured with environment variables
-client = OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
-
-ENV_URL = os.getenv("ENV_URL", "http://localhost:7860")
+ENV_URL = "http://localhost:7860"
 BENCHMARK = "data-cleaning-env"
+MODEL_NAME = "rule-based-test"
 TASKS = ["easy", "medium", "hard"]
 
 
@@ -50,57 +38,34 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
     )
 
 
-def ask_llm(observation: dict) -> dict:
-    """Ask the LLM what cleaning action to take."""
+def get_rule_based_action(obs: dict) -> dict:
+    """Rule-based action selection (no LLM needed for testing)."""
+    issues = obs["issues_detected"]
+    legal = obs["legal_actions"]
+    data = obs["current_data"]
+    first_col = list(data.keys())[0] if data else "id"
     
-    # Get first column as fallback
-    columns = list(observation['current_data'].keys())
-    first_column = columns[0] if columns else "id"
+    # Default
+    action = {"action_type": "skip", "column": first_col, "value": None}
     
-    prompt = f"""
-You are a data cleaning agent. You receive a row of data and must clean it.
-
-Current row data: {observation['current_data']}
-Issues detected: {observation['issues_detected']}
-Legal actions: {observation['legal_actions']}
-Available columns: {columns}
-
-Choose ONE action from the legal actions list.
-Respond in this exact JSON format with ALL three fields always present:
-{{
-  "action_type": "fill_missing",
-  "column": "age",
-  "value": 30
-}}
-
-Rules:
-- action_type must be from legal_actions list
-- column must ALWAYS be one of: {columns}
-- value is required for fill_missing, optional for others (use null if not needed)
-- For fill_missing: provide a sensible default value
-- For skip: still include column field using first available column
-- ALWAYS include all three fields: action_type, column, value
-"""
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,
-    )
-
-    import json
-    text = response.choices[0].message.content.strip()
-    text = text.replace("```json", "").replace("```", "").strip()
-    parsed = json.loads(text)
+    if "missing:age" in issues and "fill_missing" in legal:
+        action = {"action_type": "fill_missing", "column": "age", "value": 30}
+    elif "missing:salary" in issues and "fill_missing" in legal:
+        action = {"action_type": "fill_missing", "column": "salary", "value": 60000}
+    elif "missing:score" in issues and "fill_missing" in legal:
+        action = {"action_type": "fill_missing", "column": "score", "value": 80}
+    elif "missing:name" in issues and "fill_missing" in legal:
+        action = {"action_type": "fill_missing", "column": "name", "value": "unknown"}
+    elif "wrong_type:score" in issues and "fix_type" in legal:
+        action = {"action_type": "fix_type", "column": "score", "value": None}
+    elif "formatting:email" in issues and "fix_formatting" in legal:
+        action = {"action_type": "fix_formatting", "column": "email", "value": None}
+    elif "formatting:name" in issues and "fix_formatting" in legal:
+        action = {"action_type": "fix_formatting", "column": "name", "value": None}
+    elif "formatting:dept" in issues and "fix_category" in legal:
+        action = {"action_type": "fix_category", "column": "dept", "value": None}
     
-    # Safety fallbacks
-    if "column" not in parsed or not parsed["column"]:
-        parsed["column"] = first_column
-    if "value" not in parsed:
-        parsed["value"] = None
-    if parsed.get("column") not in columns:
-        parsed["column"] = first_column
-        
-    return parsed
+    return action
 
 
 def run_task(task_name: str) -> float:
@@ -123,14 +88,14 @@ def run_task(task_name: str) -> float:
         while not obs["done"]:
             steps_taken += 1
             
-            # Get action from LLM
+            # Get action (rule-based, no LLM)
             error_msg = None
             try:
-                action = ask_llm(obs)
+                action = get_rule_based_action(obs)
                 action_str = f"{action['action_type']}('{action['column']}',{action['value']})"
             except Exception as e:
                 error_msg = str(e)
-                # Fallback action on LLM error
+                # Fallback action on error
                 action = {
                     "action_type": "skip",
                     "column": list(obs["current_data"].keys())[0] if obs["current_data"] else "id",

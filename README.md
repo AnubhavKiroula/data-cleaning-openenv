@@ -153,13 +153,38 @@ uvicorn app:app --host 0.0.0.0 --port 7860
 
 ### Run the baseline inference script
 
-```bash
-export OPENAI_API_KEY=your_key_here
-export API_BASE_URL=http://localhost:7860   # or your HF Space URL
-export MODEL_NAME=gpt-4o-mini
+**Setup environment variables:**
 
+```bash
+# Option 1: Copy and edit .env file (recommended for local testing)
+cp .env.example .env
+# Edit .env and add your API key:
+# HF_TOKEN=your_actual_api_key_here
+
+# Option 2: Set environment variables directly
+export HF_TOKEN=your_api_key_here
+export API_BASE_URL=https://api.openai.com/v1  # or your preferred endpoint
+export MODEL_NAME=gpt-4o-mini                   # use cheaper models to minimize cost
+```
+
+**Run inference:**
+
+```bash
 python inference.py
 ```
+
+The script will output structured logs in the format required by the hackathon:
+```
+[START] task=easy env=data-cleaning-env model=gpt-4o-mini
+[STEP] step=1 action=fill_missing('age',30) reward=0.30 done=false error=null
+[STEP] step=2 action=fix_type('score',None) reward=0.20 done=false error=null
+...
+[END] success=true steps=10 score=0.930 rewards=0.30,0.20,...
+```
+
+**Cost-effective models for testing:**
+- OpenAI: `gpt-4o-mini` (~$0.15/1M input tokens)
+- HuggingFace: `meta-llama/Llama-3.2-1B-Instruct` (free with HF token)
 
 ---
 
