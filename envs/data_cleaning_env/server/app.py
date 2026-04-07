@@ -29,9 +29,10 @@ class StepRequest(BaseModel):
 
 
 @app.post("/reset")
-def reset(request: ResetRequest):
+def reset(request: Optional[ResetRequest] = None):
     try:
-        return env.reset(task_name=request.task_name)
+        task_name = request.task_name if request else "easy"
+        return env.reset(task_name=task_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
