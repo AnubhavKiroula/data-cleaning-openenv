@@ -285,5 +285,5 @@ The **hybrid approach** (DQN + Specialist fallback) provides the optimal balance
 ---
 
 *Last Updated: April 2026*  
-*Author: Backend ML Agent*  
+*Author: Anubhav Kiroula*  
 *Version: Phase 1.3 Complete*

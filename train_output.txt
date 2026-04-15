@@ -1,0 +1,4 @@
+usage: train_dqn.py [-h] [--epochs EPOCHS] [--task {easy,medium,hard}]
+                    [--save] [--device DEVICE] [--batch-size BATCH_SIZE]
+                    [--learning-rate LEARNING_RATE] [--seed SEED]
+train_dqn.py: error: unrecognized arguments: --difficulty hard
