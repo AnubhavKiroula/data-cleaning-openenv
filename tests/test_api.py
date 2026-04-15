@@ -216,3 +216,20 @@ def test_metrics_calculation(client: TestClient) -> None:
     assert "improvement" in payload
 
 
+def test_upload_dataset_invalid_format(client: TestClient) -> None:
+    response = client.post(
+        "/api/datasets/upload",
+        files={"file": ("bad.txt", b"not,a,csv", "text/plain")},
+        data={"task_name": "easy"},
+    )
+    assert response.status_code == 400
+    assert "Invalid format" in response.json()["detail"]
+
+
+def test_get_dataset_not_found(client: TestClient) -> None:
+    unknown_dataset_id = str(uuid4())
+    response = client.get(f"/api/datasets/{unknown_dataset_id}")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dataset not found"
+
+

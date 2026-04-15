@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import json
 import logging
 from datetime import datetime, timezone
@@ -53,13 +54,26 @@ def _probe_database_engine() -> None:
 configure_logging()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Data Cleaning Platform", version="1.0.0")
 REQUEST_METRICS = {
     "health_checks_total": 0,
     "datasets_requests_total": 0,
     "jobs_requests_total": 0,
     "inference_requests_total": 0,
 }
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Initialize required runtime components on startup."""
+    try:
+        _probe_database_engine()
+        init_db()
+        logger.info("FastAPI backend initialized")
+    except Exception:
+        logger.exception("Backend startup completed with database initialization warning")
+    yield
+
+
+app = FastAPI(title="Data Cleaning Platform", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,17 +82,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    """Initialize required runtime components."""
-    try:
-        _probe_database_engine()
-        init_db()
-        logger.info("FastAPI backend initialized")
-    except Exception:
-        logger.exception("Backend startup completed with database initialization warning")
 
 
 @app.get("/api/health")
