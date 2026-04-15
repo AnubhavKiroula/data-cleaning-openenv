@@ -46,3 +46,8 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Documentation files (local only)
+AGENTS.md
+INSTRUCTIONS.md
+QUICKSTART.md
