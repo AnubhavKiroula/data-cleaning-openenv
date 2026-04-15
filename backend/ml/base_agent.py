@@ -116,24 +116,34 @@ class AgentFactory:
         Raises:
             ValueError: If agent_type is not recognized
         """
-        # This will be implemented when we have specialist agents
+        # Import specialist agents
         from .specialist_agents import (
             FillMissingAgent,
             DuplicateDetector,
             OutlierHandler,
             CategoryStandardizer,
-            SkipAgent,
+            SkipAgent
         )
-
+        
+        # Import DQN agent
+        try:
+            from .dqn_model import DQNAgent
+        except ImportError:
+            DQNAgent = None
+        
         agent_classes = {
             "fill_missing": FillMissingAgent,
             "duplicate_detector": DuplicateDetector,
             "outlier_handler": OutlierHandler,
             "category_standardizer": CategoryStandardizer,
-            "skip": SkipAgent,
+            "skip": SkipAgent
         }
-
+        
+        # Add DQN agent if available
+        if DQNAgent is not None:
+            agent_classes["dqn"] = DQNAgent
+        
         if agent_type not in agent_classes:
             raise ValueError(f"Unknown agent type: {agent_type}")
-
+        
         return agent_classes[agent_type](**kwargs)
