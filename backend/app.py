@@ -10,11 +10,13 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 from sqlalchemy import create_engine
 
 from backend.config import settings
 from backend.database import init_db
+from backend.monitoring.metrics import export_metrics
+from backend.monitoring.middleware import MetricsMiddleware
 from backend.routes.datasets import router as datasets_router
 from backend.routes.inference import router as inference_router
 from backend.routes.jobs import router as jobs_router
@@ -82,6 +84,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MetricsMiddleware)
 
 
 @app.get("/api/health")
@@ -101,11 +104,8 @@ app.include_router(jobs_router)
 app.include_router(inference_router)
 
 
-@app.get("/metrics", response_class=PlainTextResponse)
-async def metrics() -> str:
-    """Expose basic Prometheus-compatible metrics."""
-    lines = []
-    for key, value in REQUEST_METRICS.items():
-        lines.append(f"# TYPE {key} counter")
-        lines.append(f"{key} {value}")
-    return "\n".join(lines) + "\n"
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Expose Prometheus metrics in text format."""
+    payload, content_type = export_metrics()
+    return Response(content=payload, media_type=content_type)
