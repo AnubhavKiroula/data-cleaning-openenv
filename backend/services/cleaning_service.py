@@ -12,6 +12,12 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.ml.agent_coordinator import AgentCoordinator
+from backend.monitoring.metrics import (
+    agent_action_count,
+    cleaning_accuracy_score,
+    track_cleaning_job_duration,
+    track_inference_latency,
+)
 from backend.models.audit_log import AuditLog
 from backend.models.cleaning_job import CleaningJob, JobStatus
 from backend.models.dataset import Dataset, DatasetStatus
@@ -32,40 +38,49 @@ class CleaningService:
         if dataset is None:
             raise ValueError("Dataset not found")
 
-        job.status = JobStatus.PROCESSING
-        job.started_at = datetime.now(timezone.utc)
-        job.total_rows = dataset.rows
-        job.rows_processed = 0
-        job.job_metadata = {"cleaning_mode": cleaning_mode, "actions": []}
-        self.db.flush()
-
-        frame = self._load_dataset(dataset.file_path)
-        legal_actions = ["fill_missing", "remove_duplicate", "cap_outlier", "standardize", "skip"]
-
-        for row_index, (_, row) in enumerate(frame.iterrows()):
-            observation = self._build_observation(row.to_dict())
-            action = self.agent_coordinator.get_best_action(observation, legal_actions)
-            reward = self._calculate_reward(action["action_type"], observation["issues_detected"])
-            self.agent_coordinator.update_agent_performance(action.get("agent_used", "Unknown"), reward)
-            self._create_audit_log(job.id, row_index, action, reward)
-            job.rows_processed = row_index + 1
-            if row_index % 25 == 0:
+        with track_cleaning_job_duration(task_difficulty=cleaning_mode) as metric_state:
+            try:
+                job.status = JobStatus.PROCESSING
+                job.started_at = datetime.now(timezone.utc)
+                job.total_rows = dataset.rows
+                job.rows_processed = 0
+                job.job_metadata = {"cleaning_mode": cleaning_mode, "actions": []}
                 self.db.flush()
 
-        metrics = await self.calculate_metrics(dataset.id)
-        dataset.data_quality_score = metrics["cleaned"]["quality_score"]
-        dataset.status = DatasetStatus.CLEANED
-        job.status = JobStatus.COMPLETED
-        job.completed_at = datetime.now(timezone.utc)
-        job.result_score = metrics["cleaned"]["quality_score"]
-        job.job_metadata = {
-            "cleaning_mode": cleaning_mode,
-            "metrics": metrics,
-            "agent_stats": self.agent_coordinator.get_agent_statistics(),
-        }
-        self.db.commit()
-        self.db.refresh(job)
-        return job
+                frame = self._load_dataset(dataset.file_path)
+                legal_actions = ["fill_missing", "remove_duplicate", "cap_outlier", "standardize", "skip"]
+
+                for row_index, (_, row) in enumerate(frame.iterrows()):
+                    observation = self._build_observation(row.to_dict())
+                    action = self.agent_coordinator.get_best_action(observation, legal_actions)
+                    reward = self._calculate_reward(action["action_type"], observation["issues_detected"])
+                    self.agent_coordinator.update_agent_performance(
+                        action.get("agent_used", "Unknown"), reward
+                    )
+                    self._create_audit_log(job.id, row_index, action, reward)
+                    job.rows_processed = row_index + 1
+                    if row_index % 25 == 0:
+                        self.db.flush()
+
+                metrics = await self.calculate_metrics(dataset.id)
+                dataset.data_quality_score = metrics["cleaned"]["quality_score"]
+                dataset.status = DatasetStatus.CLEANED
+                job.status = JobStatus.COMPLETED
+                job.completed_at = datetime.now(timezone.utc)
+                job.result_score = metrics["cleaned"]["quality_score"]
+                job.job_metadata = {
+                    "cleaning_mode": cleaning_mode,
+                    "metrics": metrics,
+                    "agent_stats": self.agent_coordinator.get_agent_statistics(),
+                }
+                cleaning_accuracy_score.labels(task_difficulty=cleaning_mode).set(job.result_score or 0.0)
+                metric_state["status"] = "completed"
+                self.db.commit()
+                self.db.refresh(job)
+                return job
+            except Exception:
+                metric_state["status"] = "failed"
+                raise
 
     async def clean_batch(self, dataset_id: UUID, cleaning_mode: str) -> CleaningJob:
         """Run full-batch cleaning orchestration and return persisted job state."""
@@ -101,7 +116,8 @@ class CleaningService:
             "issues_detected": issues_detected,
         }
         legal_actions = ["fill_missing", "remove_duplicate", "cap_outlier", "standardize", "skip"]
-        action = self.agent_coordinator.get_best_action(observation, legal_actions)
+        with track_inference_latency(model_type="agent_coordinator", task="interactive_step"):
+            action = self.agent_coordinator.get_best_action(observation, legal_actions)
         return {
             "action": action,
             "confidence": 0.8,
@@ -195,6 +211,10 @@ class CleaningService:
             agent_used=action.get("agent_used", self._infer_agent_name([])),
             confidence=float(action.get("confidence", 0.8)),
         )
+        agent_action_count.labels(
+            action_type=action.get("action_type", "unknown"),
+            agent=action.get("agent_used", self._infer_agent_name([])),
+        ).inc()
         self.db.add(audit)
 
     def _infer_agent_name(self, issues_detected: list[str]) -> str:
