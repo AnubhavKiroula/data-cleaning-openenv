@@ -15,7 +15,7 @@ from backend.app import app
 from backend.database import get_db
 from backend.models.cleaning_job import JobStatus
 from backend.routes import datasets as datasets_routes
-from backend.services.cleaning_service import CleaningService
+from backend.routes import jobs as jobs_routes
 
 
 @dataclass
@@ -129,15 +129,11 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     app.dependency_overrides[get_db] = _get_test_db
     monkeypatch.setattr(datasets_routes, "UPLOAD_DIR", tmp_path)
 
-    async def _mock_clean_batch(self: CleaningService, dataset_id: UUID, cleaning_mode: str) -> Any:
-        assert cleaning_mode in {"aggressive", "conservative"}
-        assert dataset_id == dataset.id
-        fake_db.job.status = JobStatus.COMPLETED
-        fake_db.job.rows_processed = fake_db.job.total_rows
-        fake_db.job.result_score = 0.92
-        return fake_db.job
+    class _StubTask:
+        def delay(self, job_id: str) -> None:
+            assert job_id == str(job.id)
 
-    monkeypatch.setattr(CleaningService, "clean_batch", _mock_clean_batch)
+    monkeypatch.setattr(jobs_routes, "clean_dataset", _StubTask())
     app.state.test_dataset_id = dataset.id
     app.state.test_job_id = job.id
     test_client = TestClient(app)
