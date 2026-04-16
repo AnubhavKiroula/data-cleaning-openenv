@@ -26,6 +26,47 @@ class CleaningService:
         self.db = db
         self.agent_coordinator = AgentCoordinator()
 
+    async def clean_existing_job(self, job: CleaningJob, cleaning_mode: str) -> CleaningJob:
+        """Execute cleaning lifecycle against an existing queued job."""
+        dataset = self.db.get(Dataset, job.dataset_id)
+        if dataset is None:
+            raise ValueError("Dataset not found")
+
+        job.status = JobStatus.PROCESSING
+        job.started_at = datetime.now(timezone.utc)
+        job.total_rows = dataset.rows
+        job.rows_processed = 0
+        job.job_metadata = {"cleaning_mode": cleaning_mode, "actions": []}
+        self.db.flush()
+
+        frame = self._load_dataset(dataset.file_path)
+        legal_actions = ["fill_missing", "remove_duplicate", "cap_outlier", "standardize", "skip"]
+
+        for row_index, (_, row) in enumerate(frame.iterrows()):
+            observation = self._build_observation(row.to_dict())
+            action = self.agent_coordinator.get_best_action(observation, legal_actions)
+            reward = self._calculate_reward(action["action_type"], observation["issues_detected"])
+            self.agent_coordinator.update_agent_performance(action.get("agent_used", "Unknown"), reward)
+            self._create_audit_log(job.id, row_index, action, reward)
+            job.rows_processed = row_index + 1
+            if row_index % 25 == 0:
+                self.db.flush()
+
+        metrics = await self.calculate_metrics(dataset.id)
+        dataset.data_quality_score = metrics["cleaned"]["quality_score"]
+        dataset.status = DatasetStatus.CLEANED
+        job.status = JobStatus.COMPLETED
+        job.completed_at = datetime.now(timezone.utc)
+        job.result_score = metrics["cleaned"]["quality_score"]
+        job.job_metadata = {
+            "cleaning_mode": cleaning_mode,
+            "metrics": metrics,
+            "agent_stats": self.agent_coordinator.get_agent_statistics(),
+        }
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
     async def clean_batch(self, dataset_id: UUID, cleaning_mode: str) -> CleaningJob:
         """Run full-batch cleaning orchestration and return persisted job state."""
         dataset = self.db.get(Dataset, dataset_id)
@@ -42,33 +83,7 @@ class CleaningService:
         )
         self.db.add(job)
         self.db.flush()
-
-        frame = self._load_dataset(dataset.file_path)
-        legal_actions = ["fill_missing", "remove_duplicate", "cap_outlier", "standardize", "skip"]
-
-        for row_index, (_, row) in enumerate(frame.iterrows()):
-            observation = self._build_observation(row.to_dict())
-            action = self.agent_coordinator.get_best_action(observation, legal_actions)
-            reward = self._calculate_reward(action["action_type"], observation["issues_detected"])
-            self.agent_coordinator.update_agent_performance(action.get("agent_used", "Unknown"), reward)
-
-            self._create_audit_log(job.id, row_index, action, reward)
-            job.rows_processed = row_index + 1
-
-        metrics = await self.calculate_metrics(dataset.id)
-        dataset.data_quality_score = metrics["cleaned"]["quality_score"]
-        dataset.status = DatasetStatus.CLEANED
-        job.status = JobStatus.COMPLETED
-        job.completed_at = datetime.now(timezone.utc)
-        job.result_score = metrics["cleaned"]["quality_score"]
-        job.job_metadata = {
-            "cleaning_mode": cleaning_mode,
-            "metrics": metrics,
-            "agent_stats": self.agent_coordinator.get_agent_statistics(),
-        }
-        self.db.commit()
-        self.db.refresh(job)
-        return job
+        return await self.clean_existing_job(job, cleaning_mode)
 
     async def get_next_action(
         self,

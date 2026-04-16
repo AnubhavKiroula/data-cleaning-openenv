@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.audit_log import AuditLog
-from backend.models.cleaning_job import CleaningJob
+from backend.models.cleaning_job import CleaningJob, JobStatus, JobType
 from backend.models.dataset import Dataset
-from backend.services.cleaning_service import CleaningService
+from backend.tasks.cleaning_tasks import clean_dataset
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -38,14 +38,25 @@ class BatchJobResponse(BaseModel):
 
 @router.post("/batch", response_model=BatchJobResponse, status_code=status.HTTP_201_CREATED)
 async def start_batch_job(payload: BatchJobRequest, db: Session = Depends(get_db)) -> BatchJobResponse:
-    """Queue a batch cleaning job and perform initial orchestration."""
+    """Queue a batch cleaning job for asynchronous worker processing."""
     dataset = db.get(Dataset, payload.dataset_id)
     if dataset is None:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     try:
-        service = CleaningService(db)
-        job = await service.clean_batch(payload.dataset_id, payload.cleaning_mode)
+        job = CleaningJob(
+            dataset_id=payload.dataset_id,
+            job_type=JobType.BATCH,
+            status=JobStatus.QUEUED,
+            total_rows=dataset.rows,
+            rows_processed=0,
+            job_metadata={"cleaning_mode": payload.cleaning_mode},
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+
+        clean_dataset.delay(str(job.id))
         return BatchJobResponse(
             job_id=job.id,
             status=job.status.value if hasattr(job.status, "value") else str(job.status),
