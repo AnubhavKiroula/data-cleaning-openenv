@@ -52,3 +52,4 @@ htmlcov/
 AGENTS.md
 INSTRUCTIONS.md
 QUICKSTART.md
+node_modules
