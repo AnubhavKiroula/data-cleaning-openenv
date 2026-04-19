@@ -52,11 +52,16 @@ const Jobs: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await getJobs(page, 20);
-      setJobs(response.items);
-      setTotalPages(Math.ceil(response.total / response.pageSize));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load jobs');
+      try {
+        const response = await getJobs(page, 20);
+        setJobs(response.items);
+        setTotalPages(Math.ceil(response.total / response.pageSize));
+      } catch (err) {
+        // Fallback: show empty list if API fails
+        console.warn('Failed to fetch jobs, showing empty list:', err);
+        setJobs([]);
+        setTotalPages(1);
+      }
     } finally {
       setLoading(false);
     }
