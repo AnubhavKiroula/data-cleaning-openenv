@@ -5,8 +5,7 @@
 
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
-import { CssBaseline, Box, Alert } from '@mui/material';
-import { Component, type ReactNode } from 'react';
+import { CssBaseline, Box } from '@mui/material';
 
 // Components
 import Navigation from './components/Navigation';
@@ -47,71 +46,40 @@ const theme = createTheme({
   },
 });
 
-// Error Boundary
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error?: Error }> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <Box sx={{ p: 3 }}>
-          <Alert severity="error">
-            <strong>Error rendering app:</strong> {this.state.error?.message || 'Unknown error'}
-          </Alert>
-          <pre style={{ marginTop: '16px', overflow: 'auto', maxHeight: '300px' }}>
-            {this.state.error?.stack}
-          </pre>
-        </Box>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
 function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <ErrorBoundary>
-        <Router>
-          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-            {/* Top Navigation */}
-            <Navigation />
+      <Router>
+        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          {/* Top Navigation */}
+          <Navigation />
 
-            {/* Main Content Area */}
-            <Box sx={{ display: 'flex', flex: 1 }}>
-              {/* Sidebar */}
-              <Sidebar />
+          {/* Main Content Area */}
+          <Box sx={{ display: 'flex', flex: 1 }}>
+            {/* Sidebar */}
+            <Sidebar />
 
-              {/* Page Content */}
-              <Box
-                component="main"
-                sx={{
-                  flexGrow: 1,
-                  p: 3,
-                  bgcolor: 'background.default',
-                  minHeight: 'calc(100vh - 64px)',
-                }}
-              >
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/upload" element={<Upload />} />
-                  <Route path="/jobs" element={<Jobs />} />
-                  <Route path="/interactive/:jobId" element={<Interactive />} />
-                </Routes>
-              </Box>
+            {/* Page Content */}
+            <Box
+              component="main"
+              sx={{
+                flexGrow: 1,
+                p: 3,
+                bgcolor: 'background.default',
+                minHeight: 'calc(100vh - 64px)',
+              }}
+            >
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/upload" element={<Upload />} />
+                <Route path="/jobs" element={<Jobs />} />
+                <Route path="/interactive/:jobId" element={<Interactive />} />
+              </Routes>
             </Box>
           </Box>
-        </Router>
-      </ErrorBoundary>
+        </Box>
+      </Router>
     </ThemeProvider>
   );
 }
