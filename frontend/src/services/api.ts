@@ -7,7 +7,6 @@ import axios, { AxiosError } from 'axios';
 import type { AxiosInstance } from 'axios';
 import type {
   Dataset,
-  DatasetUploadRequest,
   Job,
   DatasetMetrics,
   InteractiveSession,

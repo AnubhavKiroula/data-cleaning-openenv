@@ -276,7 +276,7 @@ const Dashboard: React.FC = () => {
                 stats.recentJobs.map((job) => (
                   <TableRow key={job.id} hover>
                     <TableCell>
-                      <Typography variant="body2" fontFamily="monospace">
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
                         {job.id.slice(0, 8)}...
                       </Typography>
                     </TableCell>

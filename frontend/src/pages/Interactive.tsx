@@ -38,7 +38,6 @@ import {
   Undo as UndoIcon,
   NavigateNext as NextIcon,
   NavigateBefore as PrevIcon,
-  Save as SaveIcon,
   Close as CloseIcon,
   Info as InfoIcon,
 } from '@mui/icons-material';
@@ -85,7 +84,18 @@ const Interactive: React.FC = () => {
       setSession({
         ...session,
         suggestions,
-        history: [...session.history, { ...action, id: Date.now().toString(), timestamp: new Date().toISOString() } as CleaningAction],
+        history: [
+          ...session.history,
+          {
+            id: Date.now().toString(),
+            timestamp: new Date().toISOString(),
+            type: action.action,
+            description: action.description,
+            confidence: action.confidence,
+            before: null,
+            after: null,
+          } as CleaningAction,
+        ],
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply action');
@@ -343,16 +353,16 @@ const Interactive: React.FC = () => {
       <Dialog open={showHelp} onClose={() => setShowHelp(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Interactive Cleaning Help</DialogTitle>
         <DialogContent>
-          <Typography variant="body1" paragraph>
+          <Typography variant="body1" sx={{ marginBottom: 1 }}>
             <strong>Accept:</strong> Apply the suggested cleaning action to the current row.
           </Typography>
-          <Typography variant="body1" paragraph>
+          <Typography variant="body1" sx={{ marginBottom: 1 }}>
             <strong>Reject:</strong> Discard the suggestion and keep the original data.
           </Typography>
-          <Typography variant="body1" paragraph>
+          <Typography variant="body1" sx={{ marginBottom: 1 }}>
             <strong>Skip:</strong> Move to the next row without making any changes.
           </Typography>
-          <Typography variant="body1" paragraph>
+          <Typography variant="body1" sx={{ marginBottom: 1 }}>
             <strong>Undo:</strong> Revert the last action you took.
           </Typography>
           <Typography variant="body2" color="textSecondary">
