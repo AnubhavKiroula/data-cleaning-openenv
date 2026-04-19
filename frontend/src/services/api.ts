@@ -3,7 +3,8 @@
  * Uses Axios for HTTP requests with error handling
  */
 
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosError } from 'axios';
+import type { AxiosInstance } from 'axios';
 import type {
   Dataset,
   DatasetUploadRequest,
