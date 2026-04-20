@@ -13,6 +13,7 @@ import type {
   SuggestedAction,
   ApiResponse,
   PaginatedResponse,
+  UploadResponse,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -82,64 +83,64 @@ class ApiClient {
   }
 
   // Dataset APIs
-  async uploadDataset(file: File, taskName: string): Promise<Dataset> {
+  async uploadDataset(file: File, taskName: string): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('task_name', taskName);
 
-    const response = await this.client.post<ApiResponse<Dataset>>('/datasets/upload', formData, {
+    const response = await this.client.post<UploadResponse>('/datasets/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return response.data.data;
+    return response.data;
   }
 
   async getDataset(id: string): Promise<Dataset> {
-    const response = await this.client.get<ApiResponse<Dataset>>(`/datasets/${id}`);
-    return response.data.data;
+    const response = await this.client.get<Dataset>(`/datasets/${id}`);
+    return response.data;
   }
 
   async getDatasets(page: number = 1, pageSize: number = 20): Promise<PaginatedResponse<Dataset>> {
-    const response = await this.client.get<ApiResponse<PaginatedResponse<Dataset>>>('/datasets', {
+    const response = await this.client.get<PaginatedResponse<Dataset>>('/datasets', {
       params: { page, pageSize },
     });
-    return response.data.data;
+    return response.data;
   }
 
   // Job APIs
   async startJob(datasetId: string): Promise<Job> {
-    const response = await this.client.post<ApiResponse<Job>>('/jobs', { datasetId });
-    return response.data.data;
+    const response = await this.client.post<Job>('/jobs', { datasetId });
+    return response.data;
   }
 
   async getJobStatus(jobId: string): Promise<Job> {
-    const response = await this.client.get<ApiResponse<Job>>(`/jobs/${jobId}`);
-    return response.data.data;
+    const response = await this.client.get<Job>(`/jobs/${jobId}`);
+    return response.data;
   }
 
   async getJobs(page: number = 1, pageSize: number = 20): Promise<PaginatedResponse<Job>> {
-    const response = await this.client.get<ApiResponse<PaginatedResponse<Job>>>('/jobs', {
+    const response = await this.client.get<PaginatedResponse<Job>>('/jobs', {
       params: { page, pageSize },
     });
-    return response.data.data;
+    return response.data;
   }
 
   // Metrics APIs
   async getMetrics(datasetId: string): Promise<DatasetMetrics> {
-    const response = await this.client.get<ApiResponse<DatasetMetrics>>(`/metrics/${datasetId}`);
-    return response.data.data;
+    const response = await this.client.get<DatasetMetrics>(`/metrics/${datasetId}`);
+    return response.data;
   }
 
   // Interactive cleaning APIs
   async startInteractiveSession(datasetId: string): Promise<InteractiveSession> {
-    const response = await this.client.post<ApiResponse<InteractiveSession>>(`/interactive/${datasetId}`);
-    return response.data.data;
+    const response = await this.client.post<InteractiveSession>(`/interactive/${datasetId}`);
+    return response.data;
   }
 
   async getSuggestions(jobId: string): Promise<SuggestedAction[]> {
-    const response = await this.client.get<ApiResponse<SuggestedAction[]>>(`/interactive/${jobId}/suggestions`);
-    return response.data.data;
+    const response = await this.client.get<SuggestedAction[]>(`/interactive/${jobId}/suggestions`);
+    return response.data;
   }
 
   async applyAction(jobId: string, action: SuggestedAction): Promise<void> {

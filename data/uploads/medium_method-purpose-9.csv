@@ -1,0 +1,10 @@
+﻿Method,Purpose,Safe,Idempotent,Cacheable,Typical Use
+GET,Retrieve data,✅,✅,✅,"Fetching resources (e.g., /users)"
+HEAD,Same as GET but without body,✅,✅,✅,"Checking metadata (e.g., file size, headers)"
+POST,"Submit data, create resource",❌,❌,Sometimes,"Creating new entries (e.g., /users)"
+PUT,Replace resource entirely,❌,✅,❌,"Updating/replacing (e.g., /users/123)"
+PATCH,Partially update resource,❌,❌,Sometimes,"Updating specific fields (e.g., email only)"
+DELETE,Remove resource,❌,✅,❌,"Deleting entries (e.g., /users/123)"
+OPTIONS,Discover server capabilities,✅,✅,❌,Preflight requests in CORS
+TRACE,"Debugging, echo request",✅,✅,❌,"Rarely used, security risk"
+CONNECT,"Establish tunnel (e.g., HTTPS proxy)",❌,❌,❌,Used in SSL/TLS connections
