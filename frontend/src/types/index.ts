@@ -83,6 +83,8 @@ export interface RowData {
 
 export interface SuggestedAction {
   action: string;
+  column: string;
+  proposedValue?: unknown;
   confidence: number;
   description: string;
   reason: string;

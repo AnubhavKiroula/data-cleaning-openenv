@@ -28,7 +28,7 @@ import RowViewer from '../components/RowViewer';
 import AgentSuggestion from '../components/AgentSuggestion';
 import ActionPanel from '../components/ActionPanel';
 import type { SuggestedAction, CleaningAction } from '../types';
-import { getSuggestions, applyAction, skipRow, getJobStatus } from '../services/api';
+import { getSuggestions, applyAction, skipRow } from '../services/api';
 
 interface RowData {
   [key: string]: unknown;
