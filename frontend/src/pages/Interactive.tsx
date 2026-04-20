@@ -1,29 +1,17 @@
 /**
- * Interactive cleaning page - Real-time data cleaning with AI suggestions
+ * Interactive cleaning page - Row-by-row data cleaning with RL agent suggestions
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
   Paper,
-  Card,
-  CardContent,
-  CardActions,
   Button,
-  Chip,
   LinearProgress,
   Alert,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Stepper,
-  Step,
-  StepLabel,
+  Grid,
   IconButton,
   Tooltip,
   Dialog,
@@ -32,92 +20,133 @@ import {
   DialogActions,
 } from '@mui/material';
 import {
-  CheckCircle as AcceptIcon,
-  Cancel as RejectIcon,
-  SkipNext as SkipIcon,
-  Undo as UndoIcon,
-  NavigateNext as NextIcon,
-  NavigateBefore as PrevIcon,
   Close as CloseIcon,
   Info as InfoIcon,
+  Psychology as AgentIcon,
 } from '@mui/icons-material';
-import type { InteractiveSession, SuggestedAction, CleaningAction } from '../types';
-import { startInteractiveSession, getSuggestions, applyAction, skipRow } from '../services/api';
+import RowViewer from '../components/RowViewer';
+import AgentSuggestion from '../components/AgentSuggestion';
+import ActionPanel from '../components/ActionPanel';
+import type { SuggestedAction, CleaningAction } from '../types';
+import { getSuggestions, applyAction, skipRow } from '../services/api';
+
+interface RowData {
+  [key: string]: unknown;
+}
+
+const MOCK_ROWS: RowData[] = [
+  { id: 1, name: 'John Doe', email: 'johndoe@example.com', age: 28, city: 'New York' },
+  { id: 2, name: 'Jane Smith', email: 'jane.smith@example.com', age: 34, city: 'Los Angeles' },
+  { id: 3, name: 'Bob Johnson', email: 'bob@invalid', age: 45, city: 'Chicago' },
+  { id: 4, name: 'Alice Brown', email: 'alice@example.com', age: null, city: 'Houston' },
+  { id: 5, name: 'Charlie Wilson', email: 'charlie@example.com', age: 29, city: 'Phoenix' },
+];
+
+const MOCK_SUGGESTIONS: SuggestedAction[] = [
+  {
+    action: 'fix_email',
+    column: 'email',
+    confidence: 0.92,
+    description: 'Fix invalid email format',
+    reason: 'Email address appears to be invalid or malformed',
+  },
+  {
+    action: 'fill_missing',
+    column: 'age',
+    confidence: 0.78,
+    description: 'Fill missing value',
+    reason: 'Age field is null - can be inferred from similar records',
+  },
+];
 
 const Interactive: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
-  const [session, setSession] = useState<InteractiveSession | null>(null);
+  
+  const [currentRowIndex, setCurrentRowIndex] = useState(0);
+  const [totalRows] = useState(MOCK_ROWS.length);
+  const [rowData, setRowData] = useState<RowData>(MOCK_ROWS[0]);
+  const [issues, setIssues] = useState<string[]>(['email', 'age']);
+  const [suggestions, setSuggestions] = useState<SuggestedAction[]>([]);
+  const [history, setHistory] = useState<CleaningAction[]>([]);
+  const [changedColumns, setChangedColumns] = useState<Record<string, { before: unknown; after: unknown }>>({});
+  
   const [loading, setLoading] = useState(true);
+  const [fetchingSuggestion, setFetchingSuggestion] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  useEffect(() => {
-    const loadSession = async () => {
-      if (!jobId) return;
-
-      try {
-        setLoading(true);
-        try {
-          const newSession = await startInteractiveSession(jobId);
-          setSession(newSession);
-        } catch (err) {
-          // Fallback: use mock data if API fails
-          console.warn('Failed to load session, using mock data:', err);
-          setSession({
-            jobId,
-            currentRow: {
-              id: 1,
-              name: 'Sample Row',
-              email: 'sample@example.com',
-              age: 25,
-            },
-            suggestions: [
-              {
-                action: 'standardize_email',
-                confidence: 0.95,
-                description: 'Standardize email format',
-                reason: 'Email appears to have inconsistent formatting',
-              },
-            ],
-            history: [],
-          });
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Fetch suggestion for current row
+  const fetchSuggestion = useCallback(async () => {
+    if (!jobId) return;
+    
+    try {
+      setFetchingSuggestion(true);
+      const newSuggestions = await getSuggestions(jobId);
+      setSuggestions(newSuggestions);
+    } catch (err) {
+      // Use mock suggestions if API fails
+      setSuggestions(MOCK_SUGGESTIONS);
+    } finally {
+      setFetchingSuggestion(false);
+    }
   }, [jobId]);
 
-  const handleAccept = async (action: SuggestedAction) => {
-    if (!jobId || !session) return;
+  // Load initial data
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      
+      // Simulate loading
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      
+      setRowData(MOCK_ROWS[0]);
+      setIssues(['email', 'age']);
+      await fetchSuggestion();
+      
+      setLoading(false);
+    };
 
+    loadData();
+  }, [fetchSuggestion, jobId]);
+
+  const handleAccept = async () => {
+    if (!jobId || suggestions.length === 0) return;
+
+    const suggestion = suggestions[0];
+    
     try {
       setProcessing(true);
-      await applyAction(jobId, action);
-      
-      // Refresh suggestions
-      const suggestions = await getSuggestions(jobId);
-      setSession({
-        ...session,
-        suggestions,
-        history: [
-          ...session.history,
-          {
-            id: Date.now().toString(),
-            timestamp: new Date().toISOString(),
-            type: action.action,
-            description: action.description,
-            confidence: action.confidence,
-            before: null,
-            after: null,
-          } as CleaningAction,
-        ],
-      });
+      setError(null);
+
+      await applyAction(jobId, suggestion);
+
+      // Update history
+      setHistory((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          type: suggestion.action,
+          description: suggestion.description,
+          timestamp: new Date().toISOString(),
+          confidence: suggestion.confidence,
+          before: rowData[suggestion.column],
+          after: suggestion.column,
+        },
+      ]);
+
+      // Mark column as changed
+      setChangedColumns((prev) => ({
+        ...prev,
+        [suggestion.column]: {
+          before: rowData[suggestion.column],
+          after: 'modified',
+        },
+      }));
+
+      // Move to next row
+      await moveToNextRow();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply action');
     } finally {
@@ -125,19 +154,17 @@ const Interactive: React.FC = () => {
     }
   };
 
-  const handleSkip = async () => {
-    if (!jobId || !session) return;
+  const handleReject = async () => {
+    if (!jobId) return;
 
     try {
       setProcessing(true);
+      setError(null);
+
       await skipRow(jobId);
       
-      // Refresh suggestions
-      const suggestions = await getSuggestions(jobId);
-      setSession({
-        ...session,
-        suggestions,
-      });
+      // Move to next row
+      await moveToNextRow();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to skip row');
     } finally {
@@ -145,16 +172,41 @@ const Interactive: React.FC = () => {
     }
   };
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return 'success';
-    if (confidence >= 0.5) return 'warning';
-    return 'error';
+  const moveToNextRow = async () => {
+    if (currentRowIndex < totalRows - 1) {
+      const nextIndex = currentRowIndex + 1;
+      setCurrentRowIndex(nextIndex);
+      setRowData(MOCK_ROWS[nextIndex]);
+      setIssues(nextIndex === 2 ? ['email'] : nextIndex === 3 ? ['age'] : []);
+      setChangedColumns({});
+      await fetchSuggestion();
+    } else {
+      // All rows processed
+      setSuggestions([]);
+    }
   };
+
+  const handlePrev = async () => {
+    if (currentRowIndex > 0) {
+      const prevIndex = currentRowIndex - 1;
+      setCurrentRowIndex(prevIndex);
+      setRowData(MOCK_ROWS[prevIndex]);
+      setIssues(prevIndex === 2 ? ['email'] : prevIndex === 3 ? ['age'] : []);
+      setChangedColumns({});
+      await fetchSuggestion();
+    }
+  };
+
+  const handleNext = async () => {
+    await moveToNextRow();
+  };
+
+  const currentSuggestion = suggestions[0];
 
   if (loading) {
     return (
       <Box>
-        <Typography variant="h4" gutterBottom>
+        <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
           Interactive Cleaning
         </Typography>
         <LinearProgress sx={{ mt: 2 }} />
@@ -168,7 +220,7 @@ const Interactive: React.FC = () => {
   if (error) {
     return (
       <Box>
-        <Typography variant="h4" gutterBottom>
+        <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
           Interactive Cleaning
         </Typography>
         <Alert severity="error" sx={{ mt: 2 }}>
@@ -185,9 +237,14 @@ const Interactive: React.FC = () => {
     <Box>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-          Interactive Cleaning
-        </Typography>
+        <Box>
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+            Interactive Cleaning
+          </Typography>
+          <Typography variant="body2" color="textSecondary">
+            Job ID: {jobId}
+          </Typography>
+        </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Tooltip title="Help">
             <IconButton onClick={() => setShowHelp(true)}>
@@ -200,194 +257,110 @@ const Interactive: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Progress Stepper */}
-      <Paper elevation={2} sx={{ p: 2, mb: 3 }}>
-        <Stepper activeStep={0} alternativeLabel>
-          <Step completed={false}>
-            <StepLabel>Review Suggestions</StepLabel>
-          </Step>
-          <Step>
-            <StepLabel>Apply Changes</StepLabel>
-          </Step>
-          <Step>
-            <StepLabel>Export Cleaned Data</StepLabel>
-          </Step>
-        </Stepper>
-      </Paper>
-
-      {session && (
-        <>
-          {/* Current Data Preview */}
-          <Card elevation={2} sx={{ mb: 3 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Current Row Data
-              </Typography>
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Field</TableCell>
-                      <TableCell>Value</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {Object.entries(session.currentRow).map(([key, value]) => (
-                      <TableRow key={key}>
-                        <TableCell sx={{ fontWeight: 500 }}>{key}</TableCell>
-                        <TableCell>{String(value)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </CardContent>
-          </Card>
-
-          {/* AI Suggestions */}
-          <Typography variant="h6" gutterBottom>
-            Suggested Actions
-          </Typography>
-
-          {session.suggestions.length > 0 ? (
-            session.suggestions.map((suggestion, index) => (
-              <Card key={index} elevation={2} sx={{ mb: 2, borderLeft: 4, borderColor: `${getConfidenceColor(suggestion.confidence)}.main` }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                    <Box>
-                      <Typography variant="h6" component="div">
-                        {suggestion.description}
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        {suggestion.reason}
-                      </Typography>
-                    </Box>
-                    <Chip
-                      label={`${(suggestion.confidence * 100).toFixed(0)}% confidence`}
-                      color={getConfidenceColor(suggestion.confidence)}
-                      size="small"
-                    />
-                  </Box>
-
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    <strong>Action:</strong> {suggestion.action}
-                  </Typography>
-                </CardContent>
-                <CardActions sx={{ justifyContent: 'flex-end', gap: 1 }}>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<RejectIcon />}
-                    disabled={processing}
-                  >
-                    Reject
-                  </Button>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    startIcon={<AcceptIcon />}
-                    onClick={() => handleAccept(suggestion)}
-                    disabled={processing}
-                  >
-                    Accept
-                  </Button>
-                </CardActions>
-              </Card>
-            ))
-          ) : (
-            <Alert severity="info" sx={{ mb: 3 }}>
-              No suggestions available for this row. It looks clean!
-            </Alert>
-          )}
-
-          {/* Navigation Actions */}
-          <Paper elevation={2} sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Button
-              variant="outlined"
-              startIcon={<PrevIcon />}
-              disabled={processing}
-            >
-              Previous
-            </Button>
-
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button
-                variant="outlined"
-                startIcon={<SkipIcon />}
-                onClick={handleSkip}
-                disabled={processing}
-              >
-                Skip Row
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<UndoIcon />}
-                disabled={processing || session.history.length === 0}
-              >
-                Undo
-              </Button>
-            </Box>
-
-            <Button
-              variant="contained"
-              endIcon={<NextIcon />}
-              disabled={processing}
-            >
-              Next
-            </Button>
+      {/* Main Content */}
+      <Grid container spacing={3}>
+        {/* Row Viewer */}
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Paper elevation={2} sx={{ p: 3 }}>
+            <RowViewer
+              rowData={rowData}
+              rowIndex={currentRowIndex}
+              totalRows={totalRows}
+              issues={issues}
+              changedColumns={changedColumns}
+            />
           </Paper>
+        </Grid>
 
-          {/* Action History */}
-          {session.history.length > 0 && (
-            <Card elevation={2} sx={{ mt: 3 }}>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Action History ({session.history.length})
-                </Typography>
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Action</TableCell>
-                        <TableCell>Time</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {session.history.slice(-5).map((action) => (
-                        <TableRow key={action.id}>
-                          <TableCell>{action.description}</TableCell>
-                          <TableCell>
-                            {new Date(action.timestamp).toLocaleTimeString()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </CardContent>
-            </Card>
+        {/* Agent Suggestion & Actions */}
+        <Grid size={{ xs: 12, md: 6 }}>
+          {fetchingSuggestion ? (
+            <Paper elevation={2} sx={{ p: 3, textAlign: 'center' }}>
+              <LinearProgress sx={{ mb: 2 }} />
+              <Typography variant="body2" color="textSecondary">
+                <AgentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Getting agent suggestion...
+              </Typography>
+            </Paper>
+          ) : currentSuggestion ? (
+            <>
+              <AgentSuggestion
+                action={currentSuggestion.action}
+                column={currentSuggestion.column}
+                proposedValue="modified_value"
+                agentName="DQN Agent"
+                confidence={currentSuggestion.confidence}
+                explanation={currentSuggestion.reason}
+              />
+              
+              <Box sx={{ mt: 3 }}>
+                <ActionPanel
+                  onAccept={handleAccept}
+                  onReject={handleReject}
+                  onPrev={handlePrev}
+                  onNext={handleNext}
+                  canGoBack={currentRowIndex > 0}
+                  canGoForward={currentRowIndex < totalRows - 1}
+                  isProcessing={processing}
+                  hasSuggestion={suggestions.length > 0}
+                />
+              </Box>
+            </>
+          ) : (
+            <Paper elevation={2} sx={{ p: 3, textAlign: 'center' }}>
+              <Typography variant="h6" gutterBottom>
+                {currentRowIndex >= totalRows - 1 ? 'All Rows Processed!' : 'No Suggestions'}
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                {currentRowIndex >= totalRows - 1
+                  ? 'You have reviewed all rows in this dataset.'
+                  : 'No cleaning suggestions for this row.'}
+              </Typography>
+              <Box sx={{ mt: 3 }}>
+                <Button
+                  variant="contained"
+                  onClick={() => navigate('/jobs')}
+                >
+                  Go to Jobs
+                </Button>
+              </Box>
+            </Paper>
           )}
-        </>
+        </Grid>
+      </Grid>
+
+      {/* Action History */}
+      {history.length > 0 && (
+        <Paper elevation={2} sx={{ mt: 3, p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Action History ({history.length} actions)
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {history.slice(-5).map((action, index) => (
+              <Typography key={index} variant="body2" sx={{ px: 1, py: 0.5, bgcolor: 'success.light', borderRadius: 1 }}>
+                {action.description}
+              </Typography>
+            ))}
+          </Box>
+        </Paper>
       )}
 
       {/* Help Dialog */}
       <Dialog open={showHelp} onClose={() => setShowHelp(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Interactive Cleaning Help</DialogTitle>
         <DialogContent>
-          <Typography variant="body1" sx={{ marginBottom: 1 }}>
-            <strong>Accept:</strong> Apply the suggested cleaning action to the current row.
+          <Typography variant="body1" sx={{ mb: 1.5 }}>
+            <strong>Accept (Enter):</strong> Apply the suggested cleaning action to the current row.
           </Typography>
-          <Typography variant="body1" sx={{ marginBottom: 1 }}>
-            <strong>Reject:</strong> Discard the suggestion and keep the original data.
+          <Typography variant="body1" sx={{ mb: 1.5 }}>
+            <strong>Reject (Esc):</strong> Discard the suggestion and move to the next row.
           </Typography>
-          <Typography variant="body1" sx={{ marginBottom: 1 }}>
-            <strong>Skip:</strong> Move to the next row without making any changes.
-          </Typography>
-          <Typography variant="body1" sx={{ marginBottom: 1 }}>
-            <strong>Undo:</strong> Revert the last action you took.
+          <Typography variant="body1" sx={{ mb: 1.5 }}>
+            <strong>Previous/Next:</strong> Navigate between rows manually.
           </Typography>
           <Typography variant="body2" color="textSecondary">
-            The confidence score indicates how certain the AI is about each suggestion.
+            The confidence score (0-100%) indicates how certain the RL agent is about each suggestion.
+            Green = High confidence (80%+), Yellow = Medium (50-80%), Red = Low (&lt;50%)
           </Typography>
         </DialogContent>
         <DialogActions>
