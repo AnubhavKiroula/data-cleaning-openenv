@@ -218,7 +218,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <FileIcon color="primary" />
             <Box sx={{ flex: 1 }}>
-              <Typography variant="body1" fontWeight={500}>
+              <Typography variant="body1" sx={{ fontWeight: 500 }}>
                 {uploadState.file.name}
               </Typography>
               <Typography variant="body2" color="textSecondary">

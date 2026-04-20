@@ -9,8 +9,8 @@ export interface Dataset {
   filename: string;
   size: number;
   rows: number;
-  columns: number;
-  score: number;
+  columns: string[];
+  data_quality_score: number;
   taskType: 'easy' | 'medium' | 'hard';
   uploadedAt: string;
   status: 'pending' | 'processing' | 'completed' | 'error';
@@ -20,8 +20,8 @@ export interface UploadResponse {
   id: string;
   filename: string;
   rows: number;
-  columns: number;
-  score: number;
+  columns: string[];
+  data_quality_score: number;
   message?: string;
 }
 

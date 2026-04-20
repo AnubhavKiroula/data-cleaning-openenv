@@ -55,13 +55,27 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({
   };
 
   const getColumnNames = (): string[] => {
+    if ('columns' in dataset && Array.isArray(dataset.columns)) {
+      return dataset.columns;
+    }
     if (previewData && previewData.length > 0) {
       return Object.keys(previewData[0]);
     }
     return [];
   };
 
+  const getQualityScore = (): number => {
+    if ('data_quality_score' in dataset) {
+      return Math.round((dataset as any).data_quality_score * 100);
+    }
+    if ('score' in dataset) {
+      return (dataset as any).score;
+    }
+    return 0;
+  };
+
   const columns = getColumnNames();
+  const qualityScore = getQualityScore();
 
   return (
     <Box>
@@ -96,7 +110,7 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({
               </Typography>
             </Box>
             <Typography variant="body1" sx={{ fontWeight: 500 }}>
-              {dataset.rows.toLocaleString()} rows × {dataset.columns} cols
+              {dataset.rows.toLocaleString()} rows × {columns.length} cols
             </Typography>
           </Paper>
         </Grid>
@@ -111,11 +125,11 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                {dataset.score}%
+                {qualityScore}%
               </Typography>
               <Chip
-                label={dataset.score >= 80 ? 'Good' : dataset.score >= 50 ? 'Fair' : 'Poor'}
-                color={getScoreColor(dataset.score)}
+                label={qualityScore >= 80 ? 'Good' : qualityScore >= 50 ? 'Fair' : 'Poor'}
+                color={getScoreColor(qualityScore)}
                 size="small"
               />
             </Box>
@@ -146,17 +160,17 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({
           <Box sx={{ flex: 1 }}>
             <LinearProgress
               variant="determinate"
-              value={dataset.score}
-              color={getScoreColor(dataset.score)}
+              value={qualityScore}
+              color={getScoreColor(qualityScore)}
               sx={{ height: 10, borderRadius: 5 }}
             />
           </Box>
           <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {dataset.score}% Clean
+            {qualityScore}% Clean
           </Typography>
         </Box>
         <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-          {100 - dataset.score}% issues detected that need cleaning
+          {100 - qualityScore}% issues detected that need cleaning
         </Typography>
       </Paper>
 
