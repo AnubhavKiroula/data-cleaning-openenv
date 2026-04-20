@@ -16,12 +16,14 @@ import {
   Chip,
   LinearProgress,
   Grid,
+  Button,
 } from '@mui/material';
 import {
   Description as FileIcon,
   TableChart as TableIcon,
   Speed as ScoreIcon,
   CalendarToday as DateIcon,
+  PlayArrow as PlayIcon,
 } from '@mui/icons-material';
 import type { Dataset, UploadResponse } from '../types';
 
@@ -29,12 +31,14 @@ interface DatasetPreviewProps {
   dataset: Dataset | UploadResponse | null;
   previewData?: Record<string, unknown>[];
   loading?: boolean;
+  onStartCleaning?: () => void;
 }
 
 const DatasetPreview: React.FC<DatasetPreviewProps> = ({
   dataset,
   previewData,
   loading = false,
+  onStartCleaning,
 }) => {
   if (!dataset) {
     return null;
@@ -213,6 +217,21 @@ const DatasetPreview: React.FC<DatasetPreviewProps> = ({
             No preview data available
           </Typography>
         </Paper>
+      )}
+
+      {/* Start Cleaning Button */}
+      {onStartCleaning && (
+        <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<PlayIcon />}
+            onClick={onStartCleaning}
+            size="large"
+          >
+            Start Cleaning
+          </Button>
+        </Box>
       )}
     </Box>
   );

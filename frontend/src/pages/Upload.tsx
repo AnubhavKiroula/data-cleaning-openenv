@@ -34,17 +34,22 @@ const Upload: React.FC = () => {
 
       const response = await uploadDataset(file, taskType);
       setUploadedDataset(response);
-
-      // Auto-start job after successful upload
-      const job = await startJob(response.id);
-      
-      // Navigate to interactive page
-      navigate(`/interactive/${job.id}`);
+      // Just show preview after upload - don't auto-start job yet
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
-      throw err;
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleStartCleaning = async () => {
+    if (!uploadedDataset) return;
+    try {
+      setError(null);
+      const job = await startJob(uploadedDataset.id);
+      navigate(`/interactive/${job.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start cleaning job');
     }
   };
 
@@ -74,7 +79,7 @@ const Upload: React.FC = () => {
       {/* Dataset Preview (after upload) */}
       {uploadedDataset && (
         <Paper elevation={2} sx={{ p: 3, mb: 4 }}>
-          <DatasetPreview dataset={uploadedDataset} />
+          <DatasetPreview dataset={uploadedDataset} onStartCleaning={handleStartCleaning} />
         </Paper>
       )}
 
