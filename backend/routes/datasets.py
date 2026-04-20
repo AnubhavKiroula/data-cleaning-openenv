@@ -44,20 +44,14 @@ async def upload_dataset(
 ) -> DatasetResponse:
     """Upload a CSV/Excel file, persist metadata, and return profile information."""
     try:
-        if file.content_type not in {
-            "text/csv",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }:
+        # Validate file type by extension since content-type may vary
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in {".csv", ".xlsx", ".xls"}:
             raise HTTPException(status_code=400, detail="Invalid format. Please upload CSV or Excel.")
 
         content = await file.read()
         if len(content) > settings.max_upload_size:
             raise HTTPException(status_code=413, detail="File too large.")
-
-        suffix = Path(file.filename or "").suffix.lower()
-        if suffix not in {".csv", ".xlsx", ".xls"}:
-            raise HTTPException(status_code=400, detail="Invalid format. Please upload CSV or Excel.")
 
         saved_path = UPLOAD_DIR / f"{task_name or 'task'}_{Path(file.filename or 'dataset').name}"
         with saved_path.open("wb") as output_file:
