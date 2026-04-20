@@ -10,9 +10,29 @@ export interface Dataset {
   size: number;
   rows: number;
   columns: number;
+  score: number;
   taskType: 'easy' | 'medium' | 'hard';
   uploadedAt: string;
   status: 'pending' | 'processing' | 'completed' | 'error';
+}
+
+export interface UploadResponse {
+  id: string;
+  filename: string;
+  rows: number;
+  columns: number;
+  score: number;
+  message?: string;
+}
+
+export interface CleaningJob {
+  id: string;
+  datasetId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress: number;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
 }
 
 export interface DatasetUploadRequest {

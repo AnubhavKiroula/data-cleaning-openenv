@@ -13,6 +13,7 @@ import type {
   SuggestedAction,
   ApiResponse,
   PaginatedResponse,
+  UploadResponse,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -82,12 +83,12 @@ class ApiClient {
   }
 
   // Dataset APIs
-  async uploadDataset(file: File, taskName: string): Promise<Dataset> {
+  async uploadDataset(file: File, taskName: string): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('task_name', taskName);
 
-    const response = await this.client.post<ApiResponse<Dataset>>('/datasets/upload', formData, {
+    const response = await this.client.post<ApiResponse<UploadResponse>>('/datasets/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
