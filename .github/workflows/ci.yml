@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "Phase-*"]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker*"
+      - ".github/workflows/**"
+      - "requirements.txt"
+  pull_request:
+    branches: [main, develop, "Phase-*"]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker*"
+      - ".github/workflows/**"
+      - "requirements.txt"
+
+jobs:
+  test-backend:
+    name: Test Backend (Python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+
+      - name: Run tests with coverage
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          DATABASE_URL: "sqlite:///./test.db"
+          REDIS_URL: "redis://localhost:6379/0"
+        run: |
+          pytest backend/tests/ --cov=backend --cov-report=xml --cov-report=term-missing -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: backend
+          fail_ci_if_error: false
+
+      - name: Type check with mypy
+        run: mypy backend/ --ignore-missing-imports || true
+
+  test-frontend:
+    name: Test Frontend (Node 18)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: Type check
+        run: cd frontend && npm run type-check
+
+      - name: Build
+        run: cd frontend && npm run build
+
+      - name: Run tests
+        run: cd frontend && npm run test:ci -- --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./frontend/coverage/coverage-final.json
+          flags: frontend
+          fail_ci_if_error: false
+
+  build-docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker Compose stack
+        run: docker-compose -f docker-compose.new.yml build
+
+      - name: Start services
+        run: docker-compose -f docker-compose.new.yml up -d
+
+      - name: Wait for services
+        run: sleep 15
+
+      - name: Health check backend
+        run: |
+          curl -f http://localhost:8000/health || exit 1
+
+      - name: Cleanup
+        run: docker-compose -f docker-compose.new.yml down
