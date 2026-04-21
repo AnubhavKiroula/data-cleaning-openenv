@@ -43,14 +43,24 @@ export interface DatasetUploadRequest {
 // Job types
 export interface Job {
   id: string;
-  datasetId: string;
-  datasetName: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  progress: number;
-  startedAt: string;
+  job_id?: string;
+  datasetId?: string;
+  dataset_id?: string;
+  datasetName?: string;
+  dataset_name?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'queued' | 'processing';
+  progress?: number;
+  rows_processed?: number;
+  total_rows?: number;
+  startedAt?: string;
+  created_at?: string;
+  started_at?: string;
   completedAt?: string;
+  completed_at?: string;
   error?: string;
-  actions: CleaningAction[];
+  actions?: CleaningAction[];
+  current_score?: number;
+  result_score?: number;
 }
 
 export interface CleaningAction {

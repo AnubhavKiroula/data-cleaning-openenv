@@ -34,6 +34,7 @@ import {
   Error as ErrorIcon,
   Schedule as PendingIcon,
   HourglassEmpty as RunningIcon,
+  PlayArrow as StartIcon,
 } from '@mui/icons-material';
 import type { Job } from '../types';
 import { getJobs } from '../services/api';
@@ -84,6 +85,16 @@ const Jobs: React.FC = () => {
         icon: <RunningIcon fontSize="small" />, 
         label: 'Running' 
       },
+      processing: { 
+        color: 'primary' as const, 
+        icon: <StartIcon fontSize="small" />, 
+        label: 'Processing' 
+      },
+      queued: { 
+        color: 'info' as const, 
+        icon: <PendingIcon fontSize="small" />, 
+        label: 'Queued' 
+      },
       completed: { 
         color: 'success' as const, 
         icon: <SuccessIcon fontSize="small" />, 
@@ -96,7 +107,8 @@ const Jobs: React.FC = () => {
       },
     };
 
-    const { color, icon, label } = config[status];
+    const cfg = config[status] || config['pending'];
+    const { color, icon, label } = cfg;
 
     return (
       <Chip
@@ -113,7 +125,7 @@ const Jobs: React.FC = () => {
     if (statusFilter !== 'all' && job.status !== statusFilter) {
       return false;
     }
-    if (searchQuery && !job.datasetName.toLowerCase().includes(searchQuery.toLowerCase())) {
+    if (searchQuery && !(job.datasetName || job.dataset_name || '').toLowerCase().includes(searchQuery.toLowerCase())) {
       return false;
     }
     return true;
@@ -208,12 +220,12 @@ const Jobs: React.FC = () => {
                   <TableCell>{getStatusChip(job.status)}</TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="body2">{job.progress}%</Typography>
+                      <Typography variant="body2">{job.progress ?? 0}%</Typography>
                     </Box>
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" color="textSecondary">
-                      {new Date(job.startedAt).toLocaleString()}
+                      {new Date(job.startedAt || job.created_at || Date.now()).toLocaleString()}
                     </Typography>
                   </TableCell>
                   <TableCell>

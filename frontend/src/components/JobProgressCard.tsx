@@ -20,10 +20,10 @@ import {
 
 interface JobProgressCardProps {
   jobId: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'running' | 'queued';
   rowsProcessed: number;
   totalRows: number;
-  startedAt: string;
+  startedAt?: string;
   completedAt?: string;
   accuracy?: number;
 }
@@ -46,7 +46,10 @@ const JobProgressCard: React.FC<JobProgressCardProps> = ({
       case 'failed':
         return 'error';
       case 'processing':
+      case 'running':
         return 'primary';
+      case 'queued':
+        return 'warning';
       default:
         return 'default';
     }
@@ -59,6 +62,7 @@ const JobProgressCard: React.FC<JobProgressCardProps> = ({
       case 'failed':
         return <ErrorIcon />;
       case 'processing':
+      case 'running':
         return <PendingIcon />;
       default:
         return <PendingIcon />;
@@ -72,13 +76,17 @@ const JobProgressCard: React.FC<JobProgressCardProps> = ({
       case 'failed':
         return 'Failed';
       case 'processing':
+      case 'running':
         return 'Processing';
+      case 'queued':
+        return 'Queued';
       default:
         return 'Pending';
     }
   };
 
   const formatElapsedTime = (): string => {
+    if (!startedAt) return 'N/A';
     const start = new Date(startedAt);
     const end = completedAt ? new Date(completedAt) : new Date();
     const diffMs = end.getTime() - start.getTime();
@@ -92,7 +100,7 @@ const JobProgressCard: React.FC<JobProgressCardProps> = ({
   };
 
   const estimateRemaining = (): string => {
-    if (status !== 'processing' || rowsProcessed === 0) return 'Calculating...';
+    if ((status !== 'processing' && status !== 'running') || !startedAt || rowsProcessed === 0) return 'Calculating...';
     
     const start = new Date(startedAt);
     const now = new Date();
