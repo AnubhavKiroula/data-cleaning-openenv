@@ -47,7 +47,8 @@ const Upload: React.FC = () => {
     try {
       setError(null);
       const job = await startJob(uploadedDataset.id);
-      navigate(`/interactive/${job.id}`);
+      const jobId = job.job_id || job.id;
+      navigate(`/interactive/${jobId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start cleaning job');
     }

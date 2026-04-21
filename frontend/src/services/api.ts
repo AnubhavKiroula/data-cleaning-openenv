@@ -110,7 +110,7 @@ class ApiClient {
 
   // Job APIs
   async startJob(datasetId: string): Promise<Job> {
-    const response = await this.client.post<Job>('/jobs', { datasetId });
+    const response = await this.client.post<Job>('/jobs/batch', { dataset_id: datasetId, cleaning_mode: 'conservative' });
     return response.data;
   }
 

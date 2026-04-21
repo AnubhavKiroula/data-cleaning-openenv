@@ -110,7 +110,7 @@ const JobHistory: React.FC = () => {
   });
 
   const sortedJobs = [...filteredJobs].sort(
-    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+    (a, b) => new Date(b.startedAt || b.created_at || 0).getTime() - new Date(a.startedAt || a.created_at || 0).getTime()
   );
 
   const paginatedJobs = sortedJobs.slice(
@@ -303,12 +303,12 @@ const JobHistory: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {formatDate(job.startedAt)}
+                        {formatDate(job.startedAt || job.created_at || new Date().toISOString())}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {job.completedAt ? formatDate(job.completedAt) : '-'}
+                        {(job.completedAt || job.completed_at) ? formatDate(job.completedAt || job.completed_at || '') : '-'}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -344,11 +344,11 @@ const JobHistory: React.FC = () => {
             <Grid size={{ xs: 12, md: 6 }}>
               <JobProgressCard
                 jobId={selectedJob.id}
-                status={selectedJob.status as 'pending' | 'processing' | 'completed' | 'failed'}
-                rowsProcessed={Math.round(selectedJob.progress * 10)}
-                totalRows={1000}
-                startedAt={selectedJob.startedAt}
-                completedAt={selectedJob.completedAt}
+                status={selectedJob.status as 'pending' | 'processing' | 'completed' | 'failed' | 'running' | 'queued'}
+                rowsProcessed={Math.round((selectedJob.progress ?? 0) * 10)}
+                totalRows={selectedJob.total_rows ?? 1000}
+                startedAt={selectedJob.startedAt || selectedJob.created_at}
+                completedAt={selectedJob.completedAt || selectedJob.completed_at}
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>

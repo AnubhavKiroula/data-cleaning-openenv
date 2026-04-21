@@ -120,10 +120,13 @@ const Dashboard: React.FC = () => {
 
       for (const job of completedJobs) {
         try {
-          const metrics = await getMetrics(job.datasetId);
-          if (metrics.accuracy > 0) {
-            totalAccuracy += metrics.accuracy;
-            accuracyCount++;
+          const datasetId = job.datasetId || job.dataset_id;
+          if (datasetId) {
+            const metrics = await getMetrics(datasetId);
+            if (metrics.accuracy > 0) {
+              totalAccuracy += metrics.accuracy;
+              accuracyCount++;
+            }
           }
         } catch {
           // Skip if metrics not available, use default
@@ -138,7 +141,7 @@ const Dashboard: React.FC = () => {
         totalJobs,
         completedJobs: completedJobs.length,
         avgAccuracy,
-        totalRowsCleaned: completedJobs.reduce((sum, job) => sum + (job.progress * 100), 0),
+        totalRowsCleaned: completedJobs.reduce((sum, job) => sum + ((job.progress ?? 0) * 100), 0),
         recentJobs,
       });
     } catch (err) {
@@ -162,20 +165,23 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const getStatusChip = (status: Job['status']) => {
-    const config = {
+    const config: Record<string, { color: 'default' | 'primary' | 'success' | 'error' | 'info'; icon: React.ReactElement; label: string }> = {
       pending: { color: 'default', icon: <PendingIcon fontSize="small" />, label: 'Pending' },
+      queued: { color: 'info', icon: <PendingIcon fontSize="small" />, label: 'Queued' },
       running: { color: 'primary', icon: <StartIcon fontSize="small" />, label: 'Running' },
+      processing: { color: 'primary', icon: <StartIcon fontSize="small" />, label: 'Processing' },
       completed: { color: 'success', icon: <SuccessIcon fontSize="small" />, label: 'Completed' },
       failed: { color: 'error', icon: <ErrorIcon fontSize="small" />, label: 'Failed' },
     };
 
-    const { color, icon, label } = config[status];
+    const cfg = config[status] || config['pending'];
+    const { color, icon, label } = cfg;
 
     return (
       <Chip
         icon={icon}
         label={label}
-        color={color as 'default' | 'primary' | 'success' | 'error'}
+        color={color}
         size="small"
         variant="outlined"
       />
@@ -299,16 +305,16 @@ const Dashboard: React.FC = () => {
                         {job.id.slice(0, 8)}...
                       </Typography>
                     </TableCell>
-                    <TableCell>{job.datasetName}</TableCell>
+                    <TableCell>{job.datasetName || job.dataset_name || 'Unknown'}</TableCell>
                     <TableCell>{getStatusChip(job.status)}</TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {job.progress}%
+                        {(job.progress ?? 0)}%
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="textSecondary">
-                        {new Date(job.startedAt).toLocaleDateString()}
+                        {new Date(job.startedAt || job.created_at || Date.now()).toLocaleDateString()}
                       </Typography>
                     </TableCell>
                     <TableCell>
