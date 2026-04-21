@@ -89,10 +89,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker Compose stack
-        run: docker-compose -f docker-compose.new.yml build
+        run: docker compose -f docker-compose.new.yml build
 
       - name: Start services
-        run: docker-compose -f docker-compose.new.yml up -d
+        run: docker compose -f docker-compose.new.yml up -d
 
       - name: Wait for services
         run: sleep 15
@@ -102,4 +102,4 @@ jobs:
           curl -f http://localhost:8000/health || exit 1
 
       - name: Cleanup
-        run: docker-compose -f docker-compose.new.yml down
+        run: docker compose -f docker-compose.new.yml down
