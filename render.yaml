@@ -1,0 +1,131 @@
+# Render Blueprint for data-cleaning-openenv
+# Deploy this via: https://dashboard.render.com/blueprint
+#
+# Prerequisites:
+#   1. GitHub repo connected to Render
+#   2. Set environment variable HF_TOKEN in Render dashboard
+#   3. Set environment variable JWT_SECRET in Render dashboard
+#
+# This blueprint creates:
+#   - PostgreSQL database
+#   - Redis cache
+#   - Backend FastAPI service
+#   - Frontend static site
+#   - Celery worker
+
+services:
+  # PostgreSQL Database
+  - type: pserv
+    name: data-cleaning-db
+    runtime: docker
+    repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
+    env: docker
+    plan: starter
+    disk:
+      name: postgres_data
+      mountPath: /var/lib/postgresql/data
+      sizeGB: 1
+    envVars:
+      - key: POSTGRES_DB
+        value: data_cleaning
+      - key: POSTGRES_USER
+        value: admin
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: PGDATA
+        value: /var/lib/postgresql/data/pgdata
+    healthCheckPath: /health
+
+  # Redis Cache
+  - type: pserv
+    name: data-cleaning-redis
+    runtime: docker
+    repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
+    env: docker
+    plan: starter
+    dockerfilePath: ./redis/Dockerfile
+    envVars:
+      - key: REDIS_MAXMEMORY
+        value: 100mb
+      - key: REDIS_MAXMEMORY_POLICY
+        value: allkeys-lru
+    healthCheckPath: /health
+
+  # Backend FastAPI Service
+  - type: web
+    name: data-cleaning-backend
+    runtime: docker
+    repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
+    env: docker
+    plan: starter
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          name: data-cleaning-db
+          type: pserv
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: data-cleaning-redis
+          type: pserv
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false  # Set manually in dashboard
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: API_BASE_URL
+        value: https://api.openai.com/v1
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: HF_TOKEN
+        sync: false  # Set manually in dashboard
+    numInstances: 1
+    healthCheckPath: /health
+
+  # Frontend Static Site
+  - type: static
+    name: data-cleaning-frontend
+    runtime: static
+    repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          name: data-cleaning-backend
+          type: web
+          property: url
+          filters:
+            env: production
+
+  # Celery Worker
+  - type: worker
+    name: data-cleaning-celery
+    runtime: docker
+    repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
+    env: docker
+    plan: starter
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: celery -A backend.tasks worker --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          name: data-cleaning-db
+          type: pserv
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: data-cleaning-redis
+          type: pserv
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false  # Set manually in dashboard
+      - key: ENVIRONMENT
+        value: production
