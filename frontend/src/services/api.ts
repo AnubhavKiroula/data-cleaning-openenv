@@ -156,6 +156,16 @@ class ApiClient {
     const response = await this.client.get<ApiResponse<unknown>>(`/jobs/${jobId}/audit`);
     return response.data;
   }
+
+  // Keep-alive ping (prevents Render free-tier spin-down during user sessions)
+  async keepAlive(): Promise<boolean> {
+    try {
+      const response = await this.client.get('/health', { timeout: 5000 });
+      return response.status === 200;
+    } catch {
+      return false;
+    }
+  }
 }
 
 // Export singleton instance
@@ -174,3 +184,4 @@ export const getSuggestions = (jobId: string) => api.getSuggestions(jobId);
 export const applyAction = (jobId: string, action: SuggestedAction) => api.applyAction(jobId, action);
 export const skipRow = (jobId: string) => api.skipRow(jobId);
 export const getAuditLog = (jobId: string) => api.getAuditLog(jobId);
+export const keepAlive = () => api.keepAlive();

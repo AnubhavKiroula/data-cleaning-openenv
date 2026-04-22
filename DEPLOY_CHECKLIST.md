@@ -149,6 +149,32 @@ If deployment fails:
 | Celery | Free | $0 |
 | **Total** | | **$0** |
 
+**Note**: Render free tier services spin down after **15 minutes of inactivity**. First request after idle may take 10-30 seconds (cold start).
+
+### Keep Services Alive (Optional)
+
+Add a cron job that pings `/health` every 10 minutes to prevent spin-down:
+
+```bash
+# Using cron-job.org (free web cron)
+URL: https://data-cleaning-backend.onrender.com/health
+Interval: Every 10 minutes
+```
+
+Or use GitHub Actions (free):
+```yaml
+# .github/workflows/keepalive.yml
+name: Keep Alive
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # Every 10 minutes
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -s https://data-cleaning-backend.onrender.com/health
+```
+
 Upgrade to paid plans if traffic grows:
 - Starter plan: ~$7-15/month per service
 - Standard plan: ~$25-50/month per service
