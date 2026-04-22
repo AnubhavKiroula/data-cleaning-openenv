@@ -51,7 +51,6 @@ docker-compose*.yml
 *.pth
 *.pt
 *.h5
-models/
 
 # Node (if any)
 node_modules/

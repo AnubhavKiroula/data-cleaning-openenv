@@ -34,6 +34,9 @@ services:
       DATABASE_URL: postgresql://admin:password@postgres:5432/data_cleaning
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
+      POSTGRES_DB: data_cleaning
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,11 +50,14 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: celery -A backend.tasks worker --loglevel=info
+    command: celery -A backend.config.celery_config:celery_app worker --loglevel=info
     environment:
       DATABASE_URL: postgresql://admin:password@postgres:5432/data_cleaning
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
+      POSTGRES_DB: data_cleaning
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
     depends_on:
       postgres:
         condition: service_healthy
