@@ -10,8 +10,9 @@
 #   - PostgreSQL database
 #   - Redis cache
 #   - Backend FastAPI service
-#   - Frontend static site
 #   - Celery worker
+#
+# Frontend is deployed separately (see DEPLOYMENT.md)
 
 services:
   # PostgreSQL Database
@@ -59,17 +60,6 @@ services:
         sync: false
     numInstances: 1
     healthCheckPath: /health
-
-  # Frontend Static Site
-  - type: staticSite
-    name: data-cleaning-frontend
-    repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
-    branch: main
-    buildCommand: cd frontend && npm install && npm run build
-    publishPath: frontend/dist
-    envVars:
-      - key: VITE_API_BASE_URL
-        value: https://${data-cleaning-backend.RENDER_EXTERNAL_URL}/api
 
   # Celery Worker
   - type: worker
