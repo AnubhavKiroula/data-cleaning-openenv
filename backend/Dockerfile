@@ -17,6 +17,7 @@ ENV PATH=/root/.local/bin:$PATH
 
 COPY . .
 
+RUN chmod +x /app/entrypoint.sh
 RUN mkdir -p /app/uploads
 
 EXPOSE 8000
