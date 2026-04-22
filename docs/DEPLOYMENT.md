@@ -64,9 +64,39 @@ Render will read `render.yaml` and create all services automatically.
 
 ---
 
-## Step 4: Set Required Environment Variables
+## Step 4: Deploy Frontend (Separate from Blueprint)
 
-After the blueprint creates services, you need to set two secret variables manually:
+**Note**: Render blueprints don't support static sites, so the frontend must be deployed manually.
+
+### Option A: Deploy Frontend as Render Static Site (Recommended)
+
+1. Go to https://dashboard.render.com
+2. Click **New +** → **Static Site**
+3. Connect your GitHub repo
+4. Fill in:
+   - **Name**: data-cleaning-frontend
+   - **Branch**: main
+   - **Build Command**: `cd frontend && npm install && npm run build`
+   - **Publish directory**: `frontend/dist`
+5. Add environment variable:
+   - **Key**: `VITE_API_BASE_URL`
+   - **Value**: `https://data-cleaning-backend.onrender.com/api` (replace with your backend URL)
+6. Click **Create Static Site**
+
+### Option B: Deploy Frontend via Vercel (Alternative)
+
+If you prefer Vercel over Render:
+1. Go to https://vercel.com
+2. Import your GitHub repo
+3. Set root directory to `frontend/`
+4. Add environment variable: `VITE_API_BASE_URL=https://data-cleaning-backend.onrender.com/api`
+5. Deploy
+
+---
+
+## Step 5: Set Backend Environment Variables (After Blueprint)
+
+After the blueprint creates services, set these manually:
 
 ### For `data-cleaning-backend` service:
 
@@ -91,7 +121,7 @@ After the blueprint creates services, you need to set two secret variables manua
 
 ---
 
-## Step 5: Verify Deployment
+## Step 6: Verify Deployment
 
 ### Wait for Services to Start
 
@@ -128,7 +158,7 @@ You should see the React application loading.
 
 ---
 
-## Step 6: Run Database Migrations
+## Step 7: Run Database Migrations
 
 If the database tables are not created automatically, run migrations from the backend service shell:
 
@@ -143,7 +173,7 @@ Alternatively, migrations run automatically via `entrypoint.sh`.
 
 ---
 
-## Step 7: Test Full Workflow
+## Step 8: Test Full Workflow
 
 1. **Upload a CSV file** through the frontend
 2. **Start a cleaning job**
