@@ -576,9 +576,12 @@ DevOps (Phase 4):
 - **ARCHITECTURE.md** - System design overview
 - **API.md** - REST API specification
 - **ML_IMPROVEMENTS.md** - RL model details
-- **DEPLOYMENT.md** - How to deploy to production
+- **DEPLOYMENT.md** - Production deployment (Render)
+- **[DEPLOYMENT_FREE_ALTERNATIVE.md](docs/DEPLOYMENT_FREE_ALTERNATIVE.md)** - **⭐ 100% FREE (Vercel + Railway + Supabase)**
 
 Checklist: [`DEPLOY_CHECKLIST.md`](DEPLOY_CHECKLIST.md)
+
+**Live Demo**: Coming soon! (Deploy using guide above)
 
 Original environment: https://01ammu-data-cleaning-openenv.hf.space
 
