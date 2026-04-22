@@ -52,15 +52,37 @@ After the blueprint creates services, set these manually:
 - [ ] Click **Save Changes**
 - [ ] Click **Manual Deploy** → **Deploy Latest Commit** for both services
 
-### Step 3: Wait for Services to Start
+### Step 3: Deploy Frontend (Separate from Blueprint)
+
+**Important**: Render blueprints don't support static sites, so deploy frontend manually.
+
+#### Option A: Render Static Site (Recommended)
+- [ ] Go to https://dashboard.render.com
+- [ ] Click **New +** → **Static Site**
+- [ ] Connect GitHub repo: `AnubhavKiroula/data-cleaning-openenv`
+- [ ] **Name**: data-cleaning-frontend
+- [ ] **Branch**: main
+- [ ] **Build Command**: `cd frontend && npm install && npm run build`
+- [ ] **Publish directory**: `frontend/dist`
+- [ ] Add environment variable:
+  - Key: `VITE_API_BASE_URL`
+  - Value: `https://data-cleaning-backend.onrender.com/api`
+- [ ] Click **Create Static Site**
+
+#### Option B: Vercel (Alternative)
+- [ ] Go to https://vercel.com
+- [ ] Click **Import** and select your GitHub repo
+- [ ] Set root directory: `frontend/`
+- [ ] Add environment variable: `VITE_API_BASE_URL=https://data-cleaning-backend.onrender.com/api`
+- [ ] Click **Deploy**
+
+### Step 4: Wait for Services to Start
 
 - [ ] PostgreSQL status = **Live**
 - [ ] Redis status = **Live**
 - [ ] Backend status = **Live**
-- [ ] Frontend status = **Live**
 - [ ] Celery status = **Live**
-
-Wait 2-3 minutes for cold start.
+- [ ] Frontend status = **Live** (Render or Vercel)
 
 ---
 
@@ -79,8 +101,7 @@ python scripts/health_check.py https://data-cleaning-backend.onrender.com --fron
 
 - [ ] Backend `/health` returns `{"status": "ok"}`
 - [ ] API docs at `/docs` load successfully
-- [ ] Frontend loads without errors
-- [ ] No CORS errors in browser console
+- [ ] Frontend loads without errors (Render or Vercel)
 
 ### Functional Testing
 
