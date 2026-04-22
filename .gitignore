@@ -53,3 +53,7 @@ AGENTS.md
 INSTRUCTIONS.md
 QUICKSTART.md
 node_modules
+
+.venv/
+models/
+plots/
