@@ -50,21 +50,55 @@ Copy the output. You will paste it into Render in Step 4.
 
 ---
 
-## Step 3: Connect GitHub Repo to Render
+## Step 3: Create PostgreSQL and Redis Services
+
+**Important**: Create these BEFORE deploying the blueprint. The blueprint will reference these.
+
+### Create PostgreSQL Database
+
+1. Go to https://dashboard.render.com
+2. Click **New +** → **PostgreSQL**
+3. Fill in:
+   - **Name**: data-cleaning-db
+   - **Database**: data_cleaning
+   - **User**: admin
+   - **Region**: Choose closest to you
+4. Click **Create Database**
+5. **Copy the DATABASE_URL** (looks like: `postgresql://admin:xxxxx@xxx.render.com:5432/data_cleaning`)
+
+### Create Redis Service
+
+1. Click **New +** → **Redis**
+2. Fill in:
+   - **Name**: data-cleaning-redis
+   - **Region**: Same as PostgreSQL
+   - **Eviction Policy**: allkeys-lru
+3. Click **Create**
+4. **Copy the REDIS_URL** (looks like: `redis://xxxx.render.com:xxxxx`)
+
+---
+
+## Step 4: Connect GitHub Repo to Render and Deploy Blueprint
 
 1. Go to https://dashboard.render.com
 2. Click **New +** → **Blueprint**
 3. Connect your GitHub account if not already connected
 4. Select `AnubhavKiroula/data-cleaning-openenv`
-5. Click **Apply**
+5. Select branch: `main`
+6. Fill in environment variables:
+   - `DATABASE_URL`: Paste the value from Step 3 (PostgreSQL)
+   - `REDIS_URL`: Paste the value from Step 3 (Redis)
+   - `JWT_SECRET`: Paste your generated secret
+   - `HF_TOKEN`: Paste your HuggingFace token
+7. Click **Apply**
 
-Render will read `render.yaml` and create all services automatically.
-
-**Note**: The blueprint creates services but some env vars must be set manually.
+The blueprint will now deploy:
+- Backend FastAPI service
+- Celery worker
 
 ---
 
-## Step 4: Deploy Frontend (Separate from Blueprint)
+## Step 5: Deploy Frontend (Separate from Blueprint)
 
 **Note**: Render blueprints don't support static sites, so the frontend must be deployed manually.
 
@@ -94,7 +128,7 @@ If you prefer Vercel over Render:
 
 ---
 
-## Step 5: Set Backend Environment Variables (After Blueprint)
+## Step 6: Set Backend Environment Variables (After Blueprint)
 
 After the blueprint creates services, set these manually:
 
@@ -121,7 +155,7 @@ After the blueprint creates services, set these manually:
 
 ---
 
-## Step 6: Verify Deployment
+## Step 7: Verify Deployment
 
 ### Wait for Services to Start
 
@@ -158,7 +192,7 @@ You should see the React application loading.
 
 ---
 
-## Step 7: Run Database Migrations
+## Step 8: Run Database Migrations
 
 If the database tables are not created automatically, run migrations from the backend service shell:
 
@@ -173,7 +207,7 @@ Alternatively, migrations run automatically via `entrypoint.sh`.
 
 ---
 
-## Step 8: Test Full Workflow
+## Step 9: Test Full Workflow
 
 1. **Upload a CSV file** through the frontend
 2. **Start a cleaning job**
