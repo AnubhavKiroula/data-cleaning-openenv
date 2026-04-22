@@ -1,0 +1,16 @@
+{
+  "episode_rewards": [
+    3.25,
+    2.4000000000000004
+  ],
+  "episode_lengths": [
+    10,
+    10
+  ],
+  "losses": [],
+  "epsilon_values": [
+    1.0,
+    0.995
+  ],
+  "avg_rewards": []
+}
