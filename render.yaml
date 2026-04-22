@@ -61,12 +61,12 @@ services:
     healthCheckPath: /health
 
   # Frontend Static Site
-  - type: static
+  - type: staticSite
     name: data-cleaning-frontend
     repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
     branch: main
     buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
+    publishPath: frontend/dist
     envVars:
       - key: VITE_API_BASE_URL
         value: https://${data-cleaning-backend.RENDER_EXTERNAL_URL}/api
