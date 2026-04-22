@@ -43,13 +43,13 @@ services:
     repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
     env: docker
     plan: starter
+    dockerContext: .
     dockerfilePath: ./redis/Dockerfile
     envVars:
       - key: REDIS_MAXMEMORY
         value: 100mb
       - key: REDIS_MAXMEMORY_POLICY
         value: allkeys-lru
-    healthCheckPath: /health
 
   # Backend FastAPI Service
   - type: web
@@ -88,7 +88,7 @@ services:
     healthCheckPath: /health
 
   # Frontend Static Site
-  - type: static
+  - type: web
     name: data-cleaning-frontend
     runtime: static
     repo: https://github.com/AnubhavKiroula/data-cleaning-openenv
