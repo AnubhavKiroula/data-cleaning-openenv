@@ -1,0 +1,36 @@
+{
+  "difficulty": "easy",
+  "epochs": 2,
+  "training_time_seconds": 0.3396627902984619,
+  "final_avg_reward": 2.825,
+  "final_std_reward": 0.4249999999999998,
+  "best_reward": 3.25,
+  "worst_reward": 2.4000000000000004,
+  "final_epsilon": 0.995,
+  "total_transitions": 20,
+  "model_info": {
+    "model_type": "DQN",
+    "state_dim": 50,
+    "action_dim": 7,
+    "total_parameters": 15239,
+    "trainable_parameters": 15239,
+    "epsilon": 0.990025,
+    "device": "cpu"
+  },
+  "training_metrics": {
+    "episode_rewards": [
+      3.25,
+      2.4000000000000004
+    ],
+    "episode_lengths": [
+      10,
+      10
+    ],
+    "losses": [],
+    "epsilon_values": [
+      1.0,
+      0.995
+    ],
+    "avg_rewards": []
+  }
+}

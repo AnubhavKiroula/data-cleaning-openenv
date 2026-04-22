@@ -1,0 +1,41 @@
+name: Keep Alive
+
+# This workflow prevents Render free-tier services from spinning down
+# due to 15-minute inactivity. It pings the health endpoints every 10 minutes.
+# Set BACKEND_URL and FRONTEND_URL as GitHub repository secrets after deployment.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # Every 10 minutes
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  BACKEND_URL: ${{ secrets.BACKEND_URL || 'https://data-cleaning-backend.onrender.com' }}
+  FRONTEND_URL: ${{ secrets.FRONTEND_URL || 'https://data-cleaning-frontend.onrender.com' }}
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          echo "Pinging backend: $BACKEND_URL/health"
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$BACKEND_URL/health" || echo "000")
+          echo "Backend response code: $RESPONSE"
+          if [ "$RESPONSE" = "200" ]; then
+            echo "Backend is healthy and awake."
+          else
+            echo "Backend may be asleep (cold start) or URL not configured."
+            echo "Set BACKEND_URL secret in GitHub repo Settings > Secrets and variables > Actions."
+          fi
+
+  ping-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping frontend URL
+        run: |
+          echo "Pinging frontend: $FRONTEND_URL"
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$FRONTEND_URL" || echo "000")
+          echo "Frontend response code: $RESPONSE"
