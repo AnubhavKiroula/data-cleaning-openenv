@@ -28,61 +28,78 @@
 
 ## Deployment Steps
 
-### Step 1: Deploy via Render Blueprint
+### Step 1: Create PostgreSQL Database
+
+- [ ] Go to https://dashboard.render.com
+- [ ] Click **New +** → **PostgreSQL**
+- [ ] Fill in:
+  - **Name**: data-cleaning-db
+  - **Database**: data_cleaning
+  - **User**: admin
+  - **Region**: Choose closest to you
+- [ ] Click **Create Database**
+- [ ] **Copy the DATABASE_URL** and save it (paste during blueprint deployment)
+
+### Step 2: Create Redis Service
+
+- [ ] Click **New +** → **Redis**
+- [ ] Fill in:
+  - **Name**: data-cleaning-redis
+  - **Region**: Same as PostgreSQL
+  - **Eviction Policy**: allkeys-lru
+- [ ] Click **Create**
+- [ ] **Copy the REDIS_URL** and save it (paste during blueprint deployment)
+
+### Step 3: Deploy via Render Blueprint
 
 - [ ] Go to https://dashboard.render.com
 - [ ] Click **New +** → **Blueprint**
 - [ ] Connect GitHub repo: `AnubhavKiroula/data-cleaning-openenv`
 - [ ] Select branch: `main`
+- [ ] Select Blueprint Path: `render.yaml`
+- [ ] Fill in environment variables:
+  - `DATABASE_URL`: Paste from Step 1
+  - `REDIS_URL`: Paste from Step 2
+  - `JWT_SECRET`: Paste your generated secret
+  - `HF_TOKEN`: Paste your HuggingFace token
 - [ ] Click **Apply Blueprint**
-- [ ] Wait for services to be created (may take 2-3 minutes)
+- [ ] Wait for services to deploy (2-3 minutes)
 
-### Step 2: Set Secret Environment Variables
-
-After the blueprint creates services, set these manually:
-
-#### data-cleaning-backend service:
-- [ ] `JWT_SECRET` = *(paste your generated secret)*
-- [ ] `HF_TOKEN` = *(paste your HuggingFace or OpenAI token)*
-
-#### data-cleaning-celery service:
-- [ ] `JWT_SECRET` = *(same as above)*
-- [ ] `HF_TOKEN` = *(same as above)*
-
-- [ ] Click **Save Changes**
-- [ ] Click **Manual Deploy** → **Deploy Latest Commit** for both services
-
-### Step 3: Deploy Frontend (Separate from Blueprint)
-
-**Important**: Render blueprints don't support static sites, so deploy frontend manually.
+### Step 4: Deploy Frontend
 
 #### Option A: Render Static Site (Recommended)
+
 - [ ] Go to https://dashboard.render.com
 - [ ] Click **New +** → **Static Site**
 - [ ] Connect GitHub repo: `AnubhavKiroula/data-cleaning-openenv`
-- [ ] **Name**: data-cleaning-frontend
-- [ ] **Branch**: main
-- [ ] **Build Command**: `cd frontend && npm install && npm run build`
-- [ ] **Publish directory**: `frontend/dist`
+- [ ] Fill in:
+  - **Name**: data-cleaning-frontend
+  - **Branch**: main
+  - **Build Command**: `cd frontend && npm install && npm run build`
+  - **Publish directory**: `frontend/dist`
 - [ ] Add environment variable:
-  - Key: `VITE_API_BASE_URL`
-  - Value: `https://data-cleaning-backend.onrender.com/api`
+  - **Key**: `VITE_API_BASE_URL`
+  - **Value**: `https://data-cleaning-backend.onrender.com/api` (replace with your actual backend URL)
 - [ ] Click **Create Static Site**
 
 #### Option B: Vercel (Alternative)
+
 - [ ] Go to https://vercel.com
-- [ ] Click **Import** and select your GitHub repo
+- [ ] Click **Import Project**
+- [ ] Select your GitHub repo
 - [ ] Set root directory: `frontend/`
 - [ ] Add environment variable: `VITE_API_BASE_URL=https://data-cleaning-backend.onrender.com/api`
 - [ ] Click **Deploy**
 
-### Step 4: Wait for Services to Start
+### Step 5: Wait for Services to Start
 
 - [ ] PostgreSQL status = **Live**
 - [ ] Redis status = **Live**
 - [ ] Backend status = **Live**
 - [ ] Celery status = **Live**
 - [ ] Frontend status = **Live** (Render or Vercel)
+
+Wait 2-3 minutes for cold start.
 
 ---
 
@@ -101,7 +118,7 @@ python scripts/health_check.py https://data-cleaning-backend.onrender.com --fron
 
 - [ ] Backend `/health` returns `{"status": "ok"}`
 - [ ] API docs at `/docs` load successfully
-- [ ] Frontend loads without errors (Render or Vercel)
+- [ ] Frontend loads without errors
 
 ### Functional Testing
 
@@ -166,7 +183,7 @@ If deployment fails:
 | PostgreSQL | Free | $0 |
 | Redis | Free | $0 |
 | Backend | Free | $0 |
-| Frontend | Static (Free) | $0 |
+| Frontend | Static (Free) or Vercel (Free) | $0 |
 | Celery | Free | $0 |
 | **Total** | | **$0** |
 
@@ -207,6 +224,6 @@ Upgrade to paid plans if traffic grows:
 When all boxes above are checked, your app is live and ready for users.
 
 **Live URLs** (update these after deployment):
-- Frontend: https://data-cleaning-frontend.onrender.com
+- Frontend: https://data-cleaning-frontend.onrender.com (or Vercel)
 - Backend API: https://data-cleaning-backend.onrender.com
 - API Docs: https://data-cleaning-backend.onrender.com/docs
