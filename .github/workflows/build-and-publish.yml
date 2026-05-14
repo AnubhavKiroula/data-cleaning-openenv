@@ -20,6 +20,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set lowercase image metadata
+        shell: bash
+        run: |
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          echo "IMAGE_OWNER=$(echo $OWNER | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "IMAGE_NAME=$(echo $REPO | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
@@ -40,8 +48,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ toLower(github.repository_owner) }}/${{ toLower(github.event.repository.name) }}-backend:${{ github.sha }}
-            ghcr.io/${{ toLower(github.repository_owner) }}/${{ toLower(github.event.repository.name) }}-backend:latest
+            ghcr.io/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_NAME }}-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -52,8 +60,8 @@ jobs:
           file: ./frontend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ toLower(github.repository_owner) }}/${{ toLower(github.event.repository.name) }}-frontend:${{ github.sha }}
-            ghcr.io/${{ toLower(github.repository_owner) }}/${{ toLower(github.event.repository.name) }}-frontend:latest
+            ghcr.io/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_NAME }}-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
