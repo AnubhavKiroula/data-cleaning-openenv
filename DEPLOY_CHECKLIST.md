@@ -143,6 +143,28 @@ When all checkboxes above are complete:
 
 ---
 
+## Deploying via Docker Compose & GHCR (alternative)
+
+If you prefer running the full stack yourself (self-hosted or cloud VM), this repo includes Dockerfiles and compose manifests.
+
+1. Build & publish images (CI does this automatically to GHCR):
+   - ghcr.io/<owner>/data-cleaning-openenv-backend:latest
+   - ghcr.io/<owner>/data-cleaning-openenv-frontend:latest
+
+2. Use docker-compose.prod.yml to run services locally or on a host:
+   - Copy .env.example to .env and set production secrets (DATABASE_URL, POSTGRES_PASSWORD, JWT_SECRET)
+   - docker compose -f docker-compose.prod.yml pull
+   - docker compose -f docker-compose.prod.yml up -d
+
+3. Verify health endpoints:
+   - curl http://<HOST>:8000/api/health
+
+4. Notes on secrets & TLS:
+   - Use environment variables or a secrets manager (Vault, cloud secrets)
+   - Terminate TLS at a reverse proxy (NGINX, cloud LB) and ensure JWT_SECRET is kept secret
+
+---
+
 ## Troubleshooting
 
 ### "Vercel deployment failed"

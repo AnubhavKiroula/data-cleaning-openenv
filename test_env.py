@@ -53,13 +53,18 @@ def run_task(task_name):
     print(f"  Total Reward: {state['total_reward']}")
     return state["score"]
 
-scores = {}
-for task in ["easy", "medium", "hard"]:
-    scores[task] = run_task(task)
+def main() -> None:
+    scores = {}
+    for task in ["easy", "medium", "hard"]:
+        scores[task] = run_task(task)
 
-print(f"\n{'='*50}")
-print("FINAL SCORES")
-print(f"{'='*50}")
-for task, score in scores.items():
-    print(f"  {task:10s}: {score:.2f}")
-print(f"  average   : {sum(scores.values())/len(scores):.2f}")
+    print(f"\n{'='*50}")
+    print("FINAL SCORES")
+    print(f"{'='*50}")
+    for task, score in scores.items():
+        print(f"  {task:10s}: {score:.2f}")
+    print(f"  average   : {sum(scores.values())/len(scores):.2f}")
+
+
+if __name__ == '__main__':
+    main()
