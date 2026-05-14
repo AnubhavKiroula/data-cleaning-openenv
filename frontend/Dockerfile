@@ -1,11 +1,12 @@
 FROM node:20-alpine as builder
 
 WORKDIR /app
-ENV NODE_ENV=production
+# Install dev deps in builder so tools like tsc are available
+ENV NODE_ENV=development
 
 COPY package.json package-lock.json ./
-# install prod deps only, be quiet to reduce logs
-RUN npm ci --silent --no-audit --prefer-offline
+# install dev deps as well, be quiet to reduce logs
+RUN npm ci --include=dev --silent --no-audit --prefer-offline
 
 COPY . .
 RUN npm run build
