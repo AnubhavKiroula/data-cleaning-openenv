@@ -1,0 +1,32 @@
+name: Uptime Monitor - HF Space Health Check
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # every 15 minutes
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check health endpoint
+        id: check
+        run: |
+          set -e
+          echo "Pinging health endpoint..."
+          if curl -fsS https://01ammu-data-cleaning-openenv.hf.space/health; then
+            echo "ok"
+          else
+            echo "health check failed"
+            exit 1
+          fi
+
+      - name: Create issue on failure
+        if: ${{ failure() }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const title = 'HF Space healthcheck failed'
+            const body = `Health check failed when pinging https://01ammu-data-cleaning-openenv.hf.space/health at ${new Date().toISOString()}. Please investigate the Space runtime.`
+            await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body })
