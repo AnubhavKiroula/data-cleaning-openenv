@@ -39,7 +39,7 @@ jobs:
           DATABASE_URL: "sqlite:///./test.db"
           REDIS_URL: "redis://localhost:6379/0"
         run: |
-          cd backend && pytest tests/ -v || true
+          cd backend && pytest -q
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
