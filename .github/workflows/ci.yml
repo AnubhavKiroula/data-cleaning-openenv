@@ -33,6 +33,9 @@ jobs:
         run: |
           pip install -r backend/requirements.txt
 
+      - name: Set PYTHONPATH for Backend
+        run: echo "PYTHONPATH=$GITHUB_WORKSPACE/backend" >> $GITHUB_ENV
+
       - name: Check DB migrations (if any)
         env:
           DATABASE_URL: "sqlite:///./test.db"
