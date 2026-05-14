@@ -33,6 +33,16 @@ jobs:
         run: |
           pip install -r backend/requirements.txt
 
+      - name: Check DB migrations (if any)
+        run: |
+          cd backend
+          if [ -f alembic.ini ]; then
+            echo "Found alembic.ini, running dry-run SQL generation"
+            alembic upgrade --sql head
+          else
+            echo "No alembic.ini - skipping migrations check"
+          fi
+
       - name: Run tests with coverage
         env:
           PYTHONDONTWRITEBYTECODE: "1"
