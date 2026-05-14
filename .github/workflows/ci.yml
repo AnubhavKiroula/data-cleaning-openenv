@@ -34,6 +34,8 @@ jobs:
           pip install -r backend/requirements.txt
 
       - name: Check DB migrations (if any)
+        env:
+          DATABASE_URL: "sqlite:///./test.db"
         run: |
           cd backend
           if [ -f alembic.ini ]; then
