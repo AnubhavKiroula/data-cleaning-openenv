@@ -12,6 +12,8 @@ import sys
 import os
 
 # Add backend to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Also add backend so package-style imports like `ml.*` work
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 from ml.base_agent import Agent, AgentFactory

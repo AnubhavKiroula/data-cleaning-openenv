@@ -14,7 +14,9 @@ import os
 import sys
 from unittest.mock import Mock, patch
 
-# Add backend to path for imports
+# Add repository root to path for imports (so backend and data packages resolve)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Also add backend so package-style imports like `ml.*` work
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from ml.dqn_model import QNetwork, DQNAgent, Transition

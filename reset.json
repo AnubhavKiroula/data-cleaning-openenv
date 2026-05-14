@@ -1,0 +1,1 @@
+{"current_row":0,"total_rows":10,"current_data":{"id":0,"age":22,"salary":50000,"score":"90"},"issues_detected":["wrong_type:score"],"legal_actions":["fix_type","skip","remove_duplicate","remove_outlier","fix_category"],"progress":0.0,"reward":0.0,"done":false}

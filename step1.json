@@ -1,0 +1,1 @@
+{"current_row":1,"total_rows":10,"current_data":{"id":1,"age":null,"salary":null,"score":"88"},"issues_detected":["missing:age","missing:salary","wrong_type:score"],"legal_actions":["fix_type","skip","remove_duplicate","remove_outlier","fill_missing","fix_category"],"progress":0.1,"reward":-0.2,"done":false}
