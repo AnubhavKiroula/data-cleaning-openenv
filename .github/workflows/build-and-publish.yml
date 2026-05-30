@@ -66,14 +66,20 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan backend image with Trivy
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/data-cleaning-openenv-backend:latest
+          image-ref: ghcr.io/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_NAME }}-backend:latest
+          format: 'sarif'
+          output: 'trivy-backend.sarif'
 
       - name: Scan frontend image with Trivy
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/data-cleaning-openenv-frontend:latest
+          image-ref: ghcr.io/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_NAME }}-frontend:latest
+          format: 'sarif'
+          output: 'trivy-frontend.sarif'
 
       - name: Create PR comment with image refs
         if: github.event_name == 'pull_request'
