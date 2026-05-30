@@ -68,7 +68,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - uploads_data:/app/uploads
+      - uploads_data:/app/data/uploads
     restart: unless-stopped
     networks:
       - backend_tier
