@@ -62,6 +62,9 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       PYTHONUNBUFFERED: 1
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_DB: ${POSTGRES_DB:-data_cleaning}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     depends_on:
       postgres:
         condition: service_healthy
