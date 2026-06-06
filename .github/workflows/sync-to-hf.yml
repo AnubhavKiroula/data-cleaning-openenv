@@ -11,9 +11,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync repo to Hugging Face Space
-        uses: huggingface/hub-sync@v0.1.0
+      - uses: astral-sh/setup-uv@v5
         with:
-          github_repo_id: ${{ github.repository }}
-          huggingface_repo_id: 01ammu/data-cleaning-openenv
-          hf_token: ${{ secrets.HF_TOKEN }}
+          enable-cache: true
+
+      - name: Sync repo to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if uvx hf upload \
+              "01ammu/data-cleaning-openenv" \
+              "." \
+              --repo-type "space" \
+              --exclude=".git*" \
+              --exclude=".github*" \
+              --delete="*" \
+              --commit-message="Sync from GitHub via GitHub Actions"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Upload failed (attempt $attempt/3). Retrying in $((attempt * 10))s..."
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Failed to sync to Hugging Face after 3 attempts."
+          exit 1
