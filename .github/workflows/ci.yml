@@ -34,11 +34,12 @@ jobs:
           pip install -r backend/requirements.txt
 
       - name: Set PYTHONPATH for Backend
-        run: echo "PYTHONPATH=$GITHUB_WORKSPACE/backend" >> $GITHUB_ENV
+        run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
 
       - name: Check DB migrations (if any)
         env:
           DATABASE_URL: "sqlite:///./test.db"
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           cd backend
           if [ -f alembic.ini ]; then
