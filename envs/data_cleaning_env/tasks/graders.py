@@ -153,6 +153,121 @@ def grade_hard(cleaned_data: List[Dict[str, Any]]) -> Tuple[float, str]:
     return score, msg
 
 
+# IoT Streaming Task Generator and Grader
+def generate_iot_stream_dataset(
+    window_size: int = 24,
+    corruption_type: str = "mixed",
+    split: str = "train",
+    seed: int = None,
+) -> List[Dict[str, Any]]:
+    """
+    Task 4: IoT Air Quality Streaming Telemetry.
+    Generates a contiguous time window of k hourly readings with realistic faults.
+    """
+    try:
+        from data.iot_data_loader import UCIAirQualityLoader, SyntheticCorruptionInjector
+    except ImportError:
+        import sys
+        import os
+        sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+        from data.iot_data_loader import UCIAirQualityLoader, SyntheticCorruptionInjector
+
+    loader = UCIAirQualityLoader()
+    train_df, test_df = loader.get_chronological_split(0.8)
+    df = train_df if split == "train" else test_df
+
+    injector = SyntheticCorruptionInjector(seed=seed)
+    col = "CO(GT)"
+    series_full = df[col].values
+
+    # Select random contiguous window of length window_size
+    max_start = max(0, len(series_full) - window_size)
+    start_idx = random.randint(0, max_start) if seed is None else (seed % max_start)
+    gt_window = series_full[start_idx : start_idx + window_size]
+
+    corruption_res = injector.corrupt_window(gt_window, corruption_type=corruption_type)
+    corrupted_window = corruption_res["corrupted"]
+    masks = corruption_res["masks"]
+
+    dataset = []
+    for t in range(len(gt_window)):
+        fault = "clean"
+        for ftype, mask in masks.items():
+            if mask[t]:
+                fault = ftype
+                break
+
+        val = corrupted_window[t]
+        # Handle nan / None
+        sensor_val = None if (val is None or (isinstance(val, float) and np.isnan(val))) else float(val)
+
+        row = {
+            "id": t,
+            "timestep": t,
+            "sensor": col,
+            "value": sensor_val,
+            "raw_corrupted": sensor_val,
+            "ground_truth": float(gt_window[t]),
+            "fault_type": fault,
+            "is_corrupted": fault != "clean",
+        }
+        dataset.append(row)
+
+    return dataset
+
+
+def grade_iot_stream(cleaned_data: List[Dict[str, Any]]) -> Tuple[float, str]:
+    """
+    Score IoT streaming task by computing MAE & RMSE reduction vs pre-corruption ground truth.
+    Returns (score, message). Score is bounded in [0.0, 1.0].
+    """
+    if not cleaned_data:
+        return 0.0, "No cleaned data returned"
+
+    errors_cleaned = []
+    errors_corrupted = []
+
+    for row in cleaned_data:
+        gt = row.get("ground_truth")
+        val = row.get("value")
+        raw = row.get("raw_corrupted")
+
+        if gt is None:
+            continue
+
+        # If agent left value as None or NaN, penalize by max deviation
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            val = 0.0
+
+        if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+            raw = 0.0
+
+        errors_cleaned.append(abs(float(val) - float(gt)))
+        errors_corrupted.append(abs(float(raw) - float(gt)))
+
+    if not errors_cleaned:
+        return 0.0, "No valid ground truth comparisons found"
+
+    mae_cleaned = float(np.mean(errors_cleaned))
+    mae_corrupted = float(np.mean(errors_corrupted))
+    rmse_cleaned = float(np.sqrt(np.mean([e ** 2 for e in errors_cleaned])))
+
+    # Compute error reduction improvement
+    if mae_corrupted < 1e-6:
+        # Was already pristine
+        score = 1.0 if mae_cleaned < 1e-6 else max(0.0, 1.0 - mae_cleaned)
+    else:
+        # Improvement ratio: 1.0 if mae_cleaned == 0, drops towards 0 if no improvement or worse
+        improvement = (mae_corrupted - mae_cleaned) / mae_corrupted
+        score = round(max(0.0, min(1.0, 0.5 + 0.5 * improvement)), 3)
+
+    msg = (
+        f"MAE: {mae_cleaned:.4f} (Raw: {mae_corrupted:.4f}), "
+        f"RMSE: {rmse_cleaned:.4f}, Improvement: {(1.0 - mae_cleaned / max(mae_corrupted, 1e-6))*100:.1f}%"
+    )
+    return score, msg
+
+
 TASKS = {
     "easy": {
         "name": "Fix Missing Values",
@@ -174,5 +289,12 @@ TASKS = {
         "difficulty": "hard",
         "generate": generate_hard_dataset,
         "grade": grade_hard,
+    },
+    "iot_stream": {
+        "name": "IoT Sensor-Stream Denoising",
+        "description": "Denoise sequential UCI Air Quality sensor stream (spikes, drift, dropouts, duplicates)",
+        "difficulty": "streaming",
+        "generate": generate_iot_stream_dataset,
+        "grade": grade_iot_stream,
     },
 }
