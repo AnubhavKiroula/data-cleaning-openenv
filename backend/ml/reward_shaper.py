@@ -98,6 +98,9 @@ class RewardShaper:
         # 6. Skip action bonus (for not breaking data)
         skip_bonus = self._calculate_skip_bonus(action, observation)
 
+        # 7. Magnitude-aware reward for IoT sensor stream denoising
+        magnitude_bonus = self._calculate_magnitude_reward(action, observation)
+
         # Total reward
         total_reward = (
             base_reward
@@ -106,10 +109,12 @@ class RewardShaper:
             + contradiction_penalty
             + issue_adjustment
             + skip_bonus
+            + magnitude_bonus
         )
 
         # Clamp reward to reasonable range
         total_reward = max(-1.0, min(1.0, total_reward))
+
 
         # Update tracking
         self._update_tracking(action, observation, total_reward)
@@ -300,6 +305,46 @@ class RewardShaper:
             return 0.1  # Bonus for appropriate skipping
 
         return 0.0
+
+    def _calculate_magnitude_reward(
+        self, action: Dict[str, Any], observation: Dict[str, Any]
+    ) -> float:
+        """
+        Calculate magnitude-aware reward for IoT telemetry denoising.
+        Rewards error reduction proportionally: fixing large spikes/drift is worth more.
+        """
+        current_data = observation.get("current_data", {})
+        gt = current_data.get("ground_truth")
+        if gt is None:
+            return 0.0
+
+        raw_val = current_data.get("value")
+        raw_err = abs(float(raw_val) - float(gt)) if raw_val is not None else 4.0
+
+        action_type = action.get("action_type", "skip")
+        new_val = action.get("value")
+
+        if action_type == "skip":
+            if raw_err < 0.2:
+                return 0.15  # Well-placed skip on clean telemetry
+            else:
+                return -min(0.4, raw_err * 0.15)  # Penalize ignoring large error
+
+        if new_val is not None:
+            try:
+                new_err = abs(float(new_val) - float(gt))
+                delta = raw_err - new_err
+                if delta > 0:
+                    # Scaled bonus for reducing error
+                    return min(0.45, delta * 0.2)
+                else:
+                    # Penalty for making it worse
+                    return max(-0.35, delta * 0.2)
+            except (ValueError, TypeError):
+                return 0.0
+
+        return 0.0
+
 
     def _update_tracking(
         self, action: Dict[str, Any], observation: Dict[str, Any], reward: float
