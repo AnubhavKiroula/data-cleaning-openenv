@@ -55,5 +55,9 @@ QUICKSTART.md
 node_modules
 
 .venv/
-models/
+models/*.pt
+!models/dqn_iot_*.pt
 plots/
+*.zip
+*.xlsx
+
