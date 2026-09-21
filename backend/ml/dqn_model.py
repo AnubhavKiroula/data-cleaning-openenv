@@ -231,77 +231,140 @@ class DQNAgent(Agent):
     
     def _encode_observation(self, observation: Dict[str, Any]) -> np.ndarray:
         """
-        Encode observation to state vector.
-        
-        Args:
-            observation: Environment observation
-            
-        Returns:
-            State vector
+        Encode observation to state vector, supporting both legacy tabular data
+        and streaming IoT telemetry with rolling temporal context.
         """
-        # Simple encoding - can be enhanced
         features = []
-        
-        # Current data features (simplified)
         current_data = observation.get("current_data", {})
-        
-        # Numeric features
-        for col in ["age", "salary", "score"]:
-            val = current_data.get(col, 0)
-            if val is None:
-                features.append(0.0)  # Missing value indicator
-            else:
-                try:
-                    features.append(float(val))
-                except (ValueError, TypeError):
-                    features.append(0.0)  # Handle string values as missing
-        
-        # Categorical features (one-hot simplified)
-        for col in ["dept", "name", "email"]:
-            val = current_data.get(col, "")
-            features.append(1.0 if val else 0.0)  # Presence indicator
-        
+        rolling_stats = observation.get("rolling_stats", {})
+        rolling_hist = observation.get("rolling_history", [])
+
+        # Check if streaming IoT telemetry
+        if "sensor" in current_data or "timestep" in current_data:
+            val = current_data.get("value")
+            is_missing = 1.0 if val is None else 0.0
+            val_numeric = float(val) if val is not None else 0.0
+
+            r_mean = float(rolling_stats.get("mean", 0.0))
+            r_std = float(rolling_stats.get("std", 0.0))
+            r_med = float(rolling_stats.get("median", 0.0))
+
+            delta_mean = val_numeric - r_mean if val is not None else 0.0
+            z_score = abs(delta_mean) / (r_std + 1e-4) if val is not None else 0.0
+
+            # Delta from previous reading
+            diff_prev = (val_numeric - rolling_hist[-1]) if (val is not None and len(rolling_hist) > 0) else 0.0
+
+            # Timestep normalized (assuming ~24 hourly window)
+            timestep = float(current_data.get("timestep", 0)) / 24.0
+
+            features.extend([
+                val_numeric,
+                is_missing,
+                r_mean,
+                r_std,
+                r_med,
+                delta_mean,
+                z_score,
+                diff_prev,
+                timestep,
+            ])
+
+            # Past rolling history buffer (padded to 5)
+            hist_padded = (rolling_hist[-5:] if len(rolling_hist) >= 5 else ([0.0] * (5 - len(rolling_hist)) + rolling_hist))
+            features.extend([float(x) if x is not None else 0.0 for x in hist_padded[-5:]])
+
+        else:
+            # Legacy tabular features
+            for col in ["age", "salary", "score"]:
+                val = current_data.get(col, 0)
+                if val is None:
+                    features.append(0.0)
+                else:
+                    try:
+                        features.append(float(val))
+                    except (ValueError, TypeError):
+                        features.append(0.0)
+
+            for col in ["dept", "name", "email"]:
+                val = current_data.get(col, "")
+                features.append(1.0 if val else 0.0)
+
         # Issues detected (binary features)
-        all_issues = ["missing:age", "missing:salary", "missing:score", "missing:name",
-                      "duplicate:row", "outlier:age", "outlier:salary", "outlier:score",
-                      "category:dept", "formatting:email", "formatting:name", "wrong_type:score"]
+        all_issues = [
+            "missing:sensor", "outlier:spike", "drift:offset", "duplicate:transmission",
+            "missing:age", "missing:salary", "missing:score", "missing:name",
+            "duplicate:row", "outlier:age", "outlier:salary", "outlier:score",
+            "category:dept", "formatting:email", "formatting:name", "wrong_type:score"
+        ]
         issues_detected = observation.get("issues_detected", [])
-        
         for issue in all_issues:
             features.append(1.0 if issue in issues_detected else 0.0)
-        
+
         # Legal actions (binary features)
-        all_actions = ["skip", "fill_missing", "remove_duplicate", "remove_outlier", 
-                      "fix_category", "fix_type", "fix_formatting"]
+        all_actions = [
+            "skip", "fill_missing", "remove_duplicate", "remove_outlier", 
+            "fix_category", "fix_type", "fix_formatting"
+        ]
         legal_actions = observation.get("legal_actions", [])
-        
         for action in all_actions:
             features.append(1.0 if action in legal_actions else 0.0)
-        
-        # Ensure fixed size
+
+        # Progress
+        features.append(float(observation.get("progress", 0.0)))
+
+        # Convert to fixed-size numpy array
         state_vector = np.array(features, dtype=np.float32)
-        
-        # Pad or truncate to expected size
         expected_size = self.state_dim
         if len(state_vector) < expected_size:
             state_vector = np.pad(state_vector, (0, expected_size - len(state_vector)))
         elif len(state_vector) > expected_size:
             state_vector = state_vector[:expected_size]
-        
+
         return state_vector
-    
+
     def _index_to_action(self, action_idx: int, observation: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert action index to action dictionary."""
+        """Convert action index to action dictionary with context-aware values."""
+        current_data = observation.get("current_data", {})
+        rolling_stats = observation.get("rolling_stats", {})
+        rolling_hist = observation.get("rolling_history", [])
+        r_mean = rolling_stats.get("mean", 0.0)
+        r_med = rolling_stats.get("median", 0.0)
+
         if action_idx in self.action_mapping:
-            return self.action_mapping[action_idx].copy()
-        else:
-            return self._create_skip_action(observation)
-    
+            action_template = self.action_mapping[action_idx].copy()
+            act_type = action_template.get("action_type", "skip")
+            col = "value" if "sensor" in current_data else action_template.get("column", "id")
+
+            # Dynamic value imputation based on rolling context
+            if act_type == "fill_missing":
+                fill_val = r_med if r_med != 0.0 else r_mean
+                return {"action_type": "fill_missing", "column": col, "value": fill_val}
+            elif act_type == "remove_outlier":
+                return {"action_type": "remove_outlier", "column": col, "value": r_med}
+            elif act_type == "fix_type":
+                val = current_data.get("value", 0.0)
+                val_num = float(val) if val is not None else r_mean
+                recalibrated = 0.5 * val_num + 0.5 * r_mean
+                return {"action_type": "fix_type", "column": col, "value": recalibrated}
+            elif act_type == "remove_duplicate":
+                prev_val = rolling_hist[-1] if len(rolling_hist) > 0 else r_mean
+                trend = (rolling_hist[-1] - rolling_hist[-2]) if len(rolling_hist) >= 2 else 0.0
+                return {"action_type": "remove_duplicate", "column": col, "value": prev_val + trend}
+            elif act_type == "skip":
+                return {"action_type": "skip", "column": col, "value": None}
+            else:
+                action_template["column"] = col
+                return action_template
+
+        return self._create_skip_action(observation)
+
     def _create_skip_action(self, observation: Dict[str, Any]) -> Dict[str, Any]:
         """Create skip action."""
         current_data = observation.get("current_data", {})
-        first_col = list(current_data.keys())[0] if current_data else "id"
+        first_col = "value" if "sensor" in current_data else (list(current_data.keys())[0] if current_data else "id")
         return {"action_type": "skip", "column": first_col, "value": None}
+
     
     def decay_epsilon(self):
         """Decay epsilon for exploration."""
