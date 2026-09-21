@@ -504,16 +504,236 @@ class DQNTrainer:
         
         return total_reward, episode_length
 
+    def train_iot_stream(
+        self,
+        epochs: int = 40,
+        window_size: int = 24,
+        save_model: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Train DQN directly on sequential IoT sensor stream environment using
+        the chronological train split of the UCI Air Quality dataset.
+        """
+        from envs.data_cleaning_env.server.environment import DataCleaningEnvironment
+        
+        env = DataCleaningEnvironment(history_len=5)
+        best_eval_mae = float('inf')
+        os.makedirs('models', exist_ok=True)
+        best_model_path = os.path.join('models', 'dqn_iot_stream_best.pt')
+        final_model_path = os.path.join('models', 'dqn_iot_stream_final.pt')
+        
+        self.logger.info(f"Starting IoT Stream DQN Training: {epochs} epochs on device: {self.device}")
+        start_time = time.time()
+        
+        self.agent.set_training_mode(True)
+        
+        for epoch in tqdm(range(1, epochs + 1), desc="IoT Stream Training"):
+            # Sample random window from train split
+            obs = env.reset(task_name="iot_stream", window_size=window_size, split="train", seed=epoch * 17)
+            self.agent.reset(obs)
+            self.reward_shaper.reset_episode(window_size)
+            
+            episode_reward = 0.0
+            done = False
+            step_idx = 0
+            
+            while not done:
+                legal_actions = obs.get("legal_actions", ["skip"])
+                action_dict = self.agent.get_action(obs, legal_actions)
+                
+                # Take step in environment
+                next_obs = env.step(
+                    action_type=action_dict["action_type"],
+                    column=action_dict.get("column", "value"),
+                    value=action_dict.get("value")
+                )
+                
+                step_reward = next_obs["reward"]
+                done = next_obs["done"]
+                
+                current_state = self.agent._encode_observation(obs)
+                next_state = self.agent._encode_observation(next_obs)
+                action_idx = self.agent.reverse_action_mapping.get(action_dict["action_type"], 0)
+                
+                self.replay_buffer.add(current_state, action_idx, step_reward, next_state, done)
+                self.agent.update_reward(step_reward)
+                
+                episode_reward += step_reward
+                obs = next_obs
+                step_idx += 1
+                
+                if self.replay_buffer.size() >= self.batch_size:
+                    loss = self.train_step()
+                    self.training_metrics['losses'].append(loss)
+            
+            # Periodic target network update
+            if epoch % self.target_update_freq == 0:
+                self.agent.update_target_network()
+                
+            self.agent.decay_epsilon()
+            self.training_metrics['episode_rewards'].append(episode_reward)
+            self.training_metrics['episode_lengths'].append(step_idx)
+            self.training_metrics['epsilon_values'].append(self.agent.epsilon)
+            
+            # Calculate rolling average reward
+            if len(self.training_metrics['episode_rewards']) >= 5:
+                avg_r = float(np.mean(self.training_metrics['episode_rewards'][-5:]))
+                self.training_metrics['avg_rewards'].append(avg_r)
+            
+            # Evaluate every 10 epochs or final
+            if epoch % 10 == 0 or epoch == epochs:
+                eval_res = self.evaluate_iot_stream(num_windows=10, window_size=window_size)
+                self.logger.info(
+                    f"Epoch {epoch}/{epochs} - Train Reward: {episode_reward:.3f}, "
+                    f"Test MAE: {eval_res['mean_mae']:.4f}, Score: {eval_res['mean_score']:.3f}, "
+                    f"Epsilon: {self.agent.epsilon:.3f}"
+                )
+                if eval_res['mean_mae'] < best_eval_mae:
+                    best_eval_mae = eval_res['mean_mae']
+                    self.agent.save_model(best_model_path)
+                    self.logger.info(f"Saved new best model to {best_model_path} (MAE: {best_eval_mae:.4f})")
+        
+        training_time = time.time() - start_time
+        
+        # Save final model
+        if save_model:
+            self.agent.save_model(final_model_path)
+            metrics_path = os.path.join('models', 'dqn_iot_stream_metrics.json')
+            with open(metrics_path, 'w') as f:
+                json.dump({
+                    "epochs": epochs,
+                    "training_time": training_time,
+                    "best_eval_mae": best_eval_mae,
+                    "episode_rewards": self.training_metrics['episode_rewards'],
+                    "epsilon_values": self.training_metrics['epsilon_values'],
+                }, f, indent=2)
+            self.logger.info(f"Final model saved to {final_model_path}")
+            
+        # Plot training curves
+        self.plot_iot_training_curves()
+        
+        final_eval = self.evaluate_iot_stream(num_windows=25, window_size=window_size)
+        return {
+            "training_time": training_time,
+            "best_eval_mae": best_eval_mae,
+            "final_eval": final_eval,
+            "metrics": self.training_metrics,
+            "best_model_path": best_model_path,
+            "final_model_path": final_model_path
+        }
+
+    def evaluate_iot_stream(
+        self,
+        num_windows: int = 15,
+        window_size: int = 24,
+        corruption_types: List[str] = ["spike", "drift", "dropout", "duplicate", "mixed"]
+    ) -> Dict[str, Any]:
+        """
+        Evaluate agent across held-out chronological test split for each corruption type.
+        """
+        from envs.data_cleaning_env.server.environment import DataCleaningEnvironment
+        
+        prev_mode = self.agent.q_network.training
+        self.agent.set_training_mode(False)
+        
+        env = DataCleaningEnvironment(history_len=5)
+        results_by_type = {}
+        all_maes = []
+        all_rmses = []
+        all_scores = []
+        
+        for ctype in corruption_types:
+            ctype_maes = []
+            ctype_rmses = []
+            ctype_scores = []
+            ctype_raw_maes = []
+            
+            for i in range(num_windows):
+                seed = 1000 + i * 31
+                obs = env.reset(task_name="iot_stream", window_size=window_size, split="test", corruption_type=ctype, seed=seed)
+                self.agent.reset(obs)
+                done = False
+                
+                while not done:
+                    legal_actions = obs.get("legal_actions", ["skip"])
+                    action_dict = self.agent.get_action(obs, legal_actions)
+                    obs = env.step(
+                        action_type=action_dict["action_type"],
+                        column=action_dict.get("column", "value"),
+                        value=action_dict.get("value")
+                    )
+                    done = obs["done"]
+                    
+                cleaned = env.cleaned_data
+                errs_cleaned = [abs(r["value"] - r["ground_truth"]) for r in cleaned if r.get("ground_truth") is not None and r.get("value") is not None]
+                errs_raw = [abs(r["raw_corrupted"] - r["ground_truth"]) for r in cleaned if r.get("ground_truth") is not None and r.get("raw_corrupted") is not None]
+                
+                if errs_cleaned:
+                    mae = float(np.mean(errs_cleaned))
+                    rmse = float(np.sqrt(np.mean([e**2 for e in errs_cleaned])))
+                    raw_mae = float(np.mean(errs_raw)) if errs_raw else mae
+                    score, _ = env.grader(cleaned)
+                    ctype_maes.append(mae)
+                    ctype_rmses.append(rmse)
+                    ctype_scores.append(score)
+                    ctype_raw_maes.append(raw_mae)
+                    
+            results_by_type[ctype] = {
+                "mae": float(np.mean(ctype_maes)),
+                "rmse": float(np.mean(ctype_rmses)),
+                "score": float(np.mean(ctype_scores)),
+                "raw_mae": float(np.mean(ctype_raw_maes)),
+                "error_reduction": float(1.0 - np.mean(ctype_maes) / max(np.mean(ctype_raw_maes), 1e-6)) * 100.0
+            }
+            all_maes.extend(ctype_maes)
+            all_rmses.extend(ctype_rmses)
+            all_scores.extend(ctype_scores)
+            
+        self.agent.set_training_mode(prev_mode)
+        return {
+            "mean_mae": float(np.mean(all_maes)) if all_maes else 0.0,
+            "mean_rmse": float(np.mean(all_rmses)) if all_rmses else 0.0,
+            "mean_score": float(np.mean(all_scores)) if all_scores else 0.0,
+            "by_corruption": results_by_type
+        }
+
+    def plot_iot_training_curves(self, save_path: str = "plots/dqn_iot_training_curves.png"):
+        """Plot and save training reward curve and epsilon decay."""
+        os.makedirs('plots', exist_ok=True)
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        episodes = range(1, len(self.training_metrics['episode_rewards']) + 1)
+        axes[0].plot(episodes, self.training_metrics['episode_rewards'], color='#1f77b4', alpha=0.4, label='Episode Reward')
+        if self.training_metrics['avg_rewards']:
+            avg_x = range(5, len(self.training_metrics['avg_rewards']) + 5)
+            axes[0].plot(avg_x[:len(self.training_metrics['avg_rewards'])], self.training_metrics['avg_rewards'], color='#d62728', linewidth=2.0, label='5-Episode Moving Avg')
+        axes[0].set_title("IoT Sensor Stream DQN Training Reward Curve", fontsize=12, fontweight='bold')
+        axes[0].set_xlabel("Epoch / Episode")
+        axes[0].set_ylabel("Cumulative Reward")
+        axes[0].grid(True, linestyle='--', alpha=0.6)
+        axes[0].legend()
+        
+        axes[1].plot(episodes, self.training_metrics['epsilon_values'], color='#2ca02c', linewidth=2.0)
+        axes[1].set_title("Epsilon Exploration Decay Schedule", fontsize=12, fontweight='bold')
+        axes[1].set_xlabel("Epoch / Episode")
+        axes[1].set_ylabel("Epsilon (Exploration Rate)")
+        axes[1].grid(True, linestyle='--', alpha=0.6)
+        
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        plt.close()
+        self.logger.info(f"IoT training curves saved to {save_path}")
+
 
 def main():
     """Main training script."""
-    parser = argparse.ArgumentParser(description='Train DQN for data cleaning')
-    parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
-    parser.add_argument('--task', type=str, choices=['easy', 'medium', 'hard'], default='easy', help='Task difficulty')
-    parser.add_argument('--save', action='store_true', help='Save trained model')
+    parser = argparse.ArgumentParser(description='Train DQN for data cleaning / IoT stream denoising')
+    parser.add_argument('--epochs', type=int, default=40, help='Number of training epochs')
+    parser.add_argument('--task', type=str, choices=['easy', 'medium', 'hard', 'iot_stream'], default='iot_stream', help='Task difficulty/type')
+    parser.add_argument('--save', action='store_true', default=True, help='Save trained model')
     parser.add_argument('--device', type=str, default='auto', help='Device (cpu/cuda/auto)')
-    parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
-    parser.add_argument('--learning-rate', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
+    parser.add_argument('--learning-rate', type=float, default=0.0003, help='Learning rate')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     
     args = parser.parse_args()
@@ -533,17 +753,35 @@ def main():
         'batch_size': args.batch_size,
         'gamma': 0.99,
         'epsilon': 1.0,
-        'epsilon_min': 0.01,
-        'epsilon_decay': 0.995,
-        'target_update_frequency': 10,
+        'epsilon_min': 0.02,
+        'epsilon_decay': 0.95,
+        'target_update_frequency': 5,
         'buffer_capacity': 10000,
-        'episode_rows': 50,
         'seed': args.seed
     }
     
     # Initialize trainer
     trainer = DQNTrainer(config)
     
+    if args.task == 'iot_stream':
+        results = trainer.train_iot_stream(epochs=args.epochs, window_size=24, save_model=args.save)
+        print("\n" + "="*60)
+        print("IOT STREAM TRAINING & EVALUATION RESULTS")
+        print("="*60)
+        print(f"Task: IoT Sensor Stream Denoising (UCI Air Quality)")
+        print(f"Device: {device}")
+        print(f"Epochs: {args.epochs}")
+        print(f"Training Time: {results['training_time']:.2f} seconds")
+        print(f"Best Test MAE: {results['best_eval_mae']:.4f}")
+        print(f"Overall Test MAE: {results['final_eval']['mean_mae']:.4f}")
+        print(f"Overall Test RMSE: {results['final_eval']['mean_rmse']:.4f}")
+        print(f"Overall Task Score: {results['final_eval']['mean_score']:.3f}")
+        print("\nPerformance by Corruption Type:")
+        for ctype, cdata in results['final_eval']['by_corruption'].items():
+            print(f"  {ctype.capitalize():<12}: Raw MAE={cdata['raw_mae']:.4f} -> Clean MAE={cdata['mae']:.4f} (Reduction: {cdata['error_reduction']:.1f}%)")
+        print("="*60)
+        return
+        
     # Convert task to difficulty
     difficulty_map = {
         'easy': DifficultyLevel.EASY,
@@ -551,8 +789,6 @@ def main():
         'hard': DifficultyLevel.HARD
     }
     difficulty = difficulty_map[args.task]
-    
-    # Train model
     results = trainer.train(difficulty, args.epochs, save_model=args.save)
     
     # Print results
@@ -571,3 +807,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
