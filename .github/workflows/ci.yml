@@ -1,118 +1,58 @@
-name: CI
+name: Research ML CI
 
 on:
   push:
-    branches: [main, develop, "Phase-*"]
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "docker*"
-      - ".github/workflows/**"
-      - "requirements.txt"
+    branches: [main, "feat/**", "Phase-*"]
   pull_request:
-    branches: [main, develop, "Phase-*"]
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "docker*"
-      - ".github/workflows/**"
-      - "requirements.txt"
+    branches: [main]
 
 jobs:
-  test-backend:
-    name: Test Backend (Python 3.11)
+  test-ml-pipeline:
+    name: ML core & streaming environment (Python 3.11)
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
-          pip install -r backend/requirements.txt
+          python -m pip install --upgrade pip
+          # CPU wheels: the runner has no GPU, and the pipeline must not need one.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
 
-      - name: Set PYTHONPATH for Backend
-        run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-
-      - name: Check DB migrations (if any)
+      - name: Run ML unit tests
         env:
-          DATABASE_URL: "sqlite:///./test.db"
           PYTHONPATH: ${{ github.workspace }}
+          MPLBACKEND: Agg
         run: |
-          cd backend
-          if [ -f alembic.ini ]; then
-            echo "Found alembic.ini, running dry-run SQL generation"
-            alembic upgrade --sql head
-          else
-            echo "No alembic.ini - skipping migrations check"
-          fi
+          pytest -v --durations=10 \
+            tests/test_data_loader.py \
+            tests/test_iot_env.py \
+            tests/test_dqn_training.py
 
-      - name: Run tests with coverage
+      - name: Validate demo notebook executes headlessly
         env:
-          PYTHONDONTWRITEBYTECODE: "1"
-          DATABASE_URL: "sqlite:///./test.db"
-          REDIS_URL: "redis://localhost:6379/0"
+          PYTHONPATH: ${{ github.workspace }}
+          MPLBACKEND: Agg
+          RL_CLEANSE_CI: "1"
         run: |
-          pytest -q tests/
+          jupyter nbconvert --to notebook --execute --inplace \
+            --ExecutePreprocessor.timeout=1800 \
+            RL-Cleanse_demo.ipynb
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+      - name: Upload executed notebook and plots
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          file: ./backend/coverage.xml
-          flags: backend
-          fail_ci_if_error: false
-        continue-on-error: true
-
-      - name: Type check with mypy
-        run: mypy backend/ --ignore-missing-imports || true
-
-  test-frontend:
-    name: Test Frontend (Node 18)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v3
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: cd frontend && npm ci
-
-      - name: Type check
-        run: cd frontend && npm run type-check
-
-      - name: Build
-        run: cd frontend && npm run build
-
-      - name: Run tests
-        run: cd frontend && npm run test:ci -- --coverage
-        continue-on-error: true
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./frontend/coverage/coverage-final.json
-          flags: frontend
-          fail_ci_if_error: false
-        continue-on-error: true
-
-  build-docker:
-    name: Build Docker Images
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker Compose stack
-        run: docker compose -f docker-compose.new.yml build
-
-      - name: Verify images built
-        run: |
-          # List images built by docker compose (don't fail CI if docker is unavailable on runner)
-          docker compose -f docker-compose.new.yml images || true
-          echo "✓ Docker compose images listed above"
-          echo "If images are not listed, docker may not be available on this runner or image names differ"
+          name: notebook-and-plots
+          path: |
+            RL-Cleanse_demo.ipynb
+            plots/
+          if-no-files-found: warn

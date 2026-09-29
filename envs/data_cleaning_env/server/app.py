@@ -19,7 +19,7 @@ env = DataCleaningEnvironment()
 
 
 class ResetRequest(BaseModel):
-    task_name: str = "easy"
+    task_name: str = "iot_stream"
 
 
 class StepRequest(BaseModel):
@@ -31,7 +31,7 @@ class StepRequest(BaseModel):
 @app.post("/reset")
 def reset(request: Optional[ResetRequest] = None):
     try:
-        task_name = request.task_name if request else "easy"
+        task_name = request.task_name if request else "iot_stream"
         return env.reset(task_name=task_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -62,11 +62,11 @@ def health():
 @app.get("/tasks")
 def list_tasks():
     try:
-        from tasks.graders import TASKS
+        from envs.data_cleaning_env.tasks.graders import TASKS
     except ModuleNotFoundError:
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-        from tasks.graders import TASKS
+        from envs.data_cleaning_env.tasks.graders import TASKS
     return {
         k: {
             "name": v["name"],
@@ -88,7 +88,7 @@ async def websocket_endpoint(websocket: WebSocket):
             msg_type = message.get("type")
             if msg_type == "reset":
                 try:
-                    result = ws_env.reset(task_name=message.get("task_name", "easy"))
+                    result = ws_env.reset(task_name=message.get("task_name", "iot_stream"))
                     await websocket.send_json({"status": "ok", **result})
                 except ValueError as e:
                     await websocket.send_json({"status": "error", "detail": str(e)})

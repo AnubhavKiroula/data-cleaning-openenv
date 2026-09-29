@@ -20,15 +20,19 @@ class ReplayBuffer:
     provides random sampling for training stability.
     """
     
-    def __init__(self, capacity: int = 10000):
+    def __init__(self, capacity: int = 10000, seed: Optional[int] = None):
         """
         Initialize replay buffer.
-        
+
         Args:
             capacity: Maximum number of transitions to store
+            seed: Seed for this buffer's own sampling RNG. Using a private
+                RNG rather than the global `random` module keeps a training
+                run reproducible regardless of what else draws randomness.
         """
         self.capacity = capacity
         self.buffer = deque(maxlen=capacity)
+        self.rng = random.Random(seed)
         self.logger = logging.getLogger("ReplayBuffer")
         
         # Statistics
@@ -74,9 +78,12 @@ class ReplayBuffer:
             raise ValueError(f"Not enough transitions in buffer. "
                            f"Have {len(self.buffer)}, need {batch_size}")
         
-        transitions = random.sample(list(self.buffer), batch_size)
+        # Sample indices rather than `random.sample(list(self.buffer), ...)`,
+        # which copied the entire deque on every training step.
+        idx = self.rng.sample(range(len(self.buffer)), batch_size)
+        transitions = [self.buffer[i] for i in idx]
         self.total_sampled += batch_size
-        
+
         return transitions
     
     def sample_tensors(self, batch_size: int):

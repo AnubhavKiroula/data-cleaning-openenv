@@ -1,572 +1,729 @@
 """
-DQN Training Script for Data Cleaning.
+DQN training pipeline for streaming IoT sensor-stream denoising.
 
-This module implements the complete DQN training pipeline including
-data generation, training loop, and model evaluation.
+Run with::
+
+    python -m backend.ml.train_dqn --epochs 300
+
+Hyperparameter defaults follow ``docs/RESEARCH_PIVOT_MASTER_PLAN.md`` section
+6.1 (batch 64, lr 3e-4, gamma 0.99, epsilon 1.0 -> 0.02 at decay 0.95, target
+network refreshed every 5 epochs, replay capacity 10,000). CUDA is used when
+available and the pipeline falls back to CPU unchanged, so tests and CI need no
+GPU.
+
+Three correctness properties this pipeline is built to hold, each of which the
+previous revision violated:
+
+**Checkpoints are selected on validation data, never on test.** The old loop
+called its evaluator with ``split="test"`` and kept the best-scoring weights,
+which is model selection on the held-out set. The validation split is carved
+from the end of the *training* region by the loader.
+
+**Exploration survives evaluation.** Mid-training evaluation runs inside
+``agent.eval_mode()``, which restores epsilon afterwards. Previously the
+evaluator set epsilon to zero permanently at epoch 10 of 40.
+
+**Training covers the whole training split and every fault family.** Window
+position is drawn from an epoch-seeded RNG over the entire split, and the fault
+family is cycled. The old loop passed ``seed=epoch * 17`` into
+``start_idx = seed % max_start``, confining 40 epochs to the first 680 of 7,485
+hours, and never passed a corruption type, so it only ever saw ``mixed``.
 """
+
+import argparse
+import copy
+import json
+import logging
+import os
+import random
+import time
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
-import pandas as pd
-import argparse
-import logging
-import time
-import os
-import json
-from typing import Dict, List, Any, Tuple
-from datetime import datetime
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 
-# Import our modules
-from .dqn_model import DQNAgent, Transition
-from .experience_replay import ReplayBuffer
-from .reward_shaper import RewardShaper
-from .agent_coordinator import AgentCoordinator
+from backend.ml.dqn_model import ACTION_TO_INDEX, DQNAgent
+from backend.ml.experience_replay import ReplayBuffer
+from backend.ml.metrics import evaluate_window
+from envs.data_cleaning_env.server.environment import DataCleaningEnvironment
+from envs.data_cleaning_env.tasks.graders import CORRUPTION_TYPES
 
-# Import data generator (handle both relative and absolute imports)
-try:
-    from data.synthetic_datasets import SyntheticDatasetGenerator, DifficultyLevel, DatasetConfig
-except ImportError:
-    from ..data.synthetic_datasets import SyntheticDatasetGenerator, DifficultyLevel, DatasetConfig
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "epochs": 300,
+    "window_size": 24,
+    "batch_size": 64,
+    "learning_rate": 3e-4,
+    "gamma": 0.99,
+    "epsilon": 1.0,
+    "epsilon_min": 0.02,
+    # The master plan specifies decay=0.95 per epoch. Applied literally that
+    # reaches the 0.02 floor at epoch 76, so a 500-epoch run would spend 85% of
+    # training with effectively no exploration. `epsilon_decay=None` instead
+    # derives the rate so the schedule spans `epsilon_span` of the run, keeping
+    # the plan's 1.0 -> 0.02 endpoints. Pass a float to force a fixed rate.
+    "epsilon_decay": None,
+    "epsilon_span": 0.7,
+    "double_dqn": True,
+    "updates_per_step": 1,
+    "target_update_frequency": 5,
+    "buffer_capacity": 10000,
+    "history_len": 5,
+    "grad_clip": 10.0,
+    "seed": 42,
+    "val_windows": 12,
+    "eval_every": 10,
+}
+
+
+def set_global_seeds(seed: int) -> None:
+    """Seed every RNG the pipeline touches, for reproducible runs."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 class DQNTrainer:
-    """
-    DQN Training pipeline for data cleaning agents.
-    
-    Handles data generation, training loop, evaluation, and model saving.
-    """
-    
-    def __init__(self, config: Dict[str, Any]):
-        """
-        Initialize trainer.
-        
-        Args:
-            config: Training configuration
-        """
-        self.config = config
+    """Trains a :class:`DQNAgent` on the ``iot_stream`` environment."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = {**DEFAULT_CONFIG, **(config or {})}
         self.logger = self._setup_logging()
-        
-        # Set device
-        self.device = torch.device(config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
-        self.logger.info(f"Using device: {self.device}")
-        
-        # Initialize components
-        self.state_dim = config.get('state_dim', 50)  # Adjust based on encoding
-        self.action_dim = config.get('action_dim', 7)  # 7 possible actions
-        
-        # Initialize DQN agent
-        self.agent = DQNAgent(self.state_dim, self.action_dim, device=str(self.device))
-        
-        # Initialize replay buffer
-        buffer_capacity = config.get('buffer_capacity', 10000)
-        self.replay_buffer = ReplayBuffer(buffer_capacity)
-        
-        # Initialize optimizer
-        learning_rate = config.get('learning_rate', 0.001)
-        self.optimizer = optim.Adam(self.agent.q_network.parameters(), lr=learning_rate)
-        
-        # Training hyperparameters
-        self.gamma = config.get('gamma', 0.99)
-        self.epsilon = config.get('epsilon', 1.0)
-        self.epsilon_min = config.get('epsilon_min', 0.01)
-        self.epsilon_decay = config.get('epsilon_decay', 0.995)
-        self.batch_size = config.get('batch_size', 32)
-        self.target_update_freq = config.get('target_update_frequency', 10)
-        
-        # Initialize reward shaper
-        self.reward_shaper = RewardShaper()
-        
-        # Initialize synthetic data generator
-        self.data_generator = SyntheticDatasetGenerator(seed=config.get('seed', 42))
-        
-        # Training metrics
-        self.training_metrics = {
-            'episode_rewards': [],
-            'episode_lengths': [],
-            'losses': [],
-            'epsilon_values': [],
-            'avg_rewards': []
+
+        requested = self.config.get("device", "auto")
+        if requested == "auto":
+            requested = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(requested)
+
+        set_global_seeds(self.config["seed"])
+
+        self.config["epsilon_decay"] = self._resolve_epsilon_decay()
+
+        self.agent = DQNAgent(
+            device=str(self.device),
+            epsilon=self.config["epsilon"],
+            epsilon_min=self.config["epsilon_min"],
+            epsilon_decay=self.config["epsilon_decay"],
+            gamma=self.config["gamma"],
+            seed=self.config["seed"],
+        )
+        self.replay_buffer = ReplayBuffer(
+            capacity=self.config["buffer_capacity"], seed=self.config["seed"]
+        )
+        self.optimizer = optim.Adam(
+            self.agent.q_network.parameters(), lr=self.config["learning_rate"]
+        )
+        self.loss_fn = nn.SmoothL1Loss()
+        self.batch_size = self.config["batch_size"]
+        self.gamma = self.config["gamma"]
+
+        self.env = DataCleaningEnvironment(history_len=self.config["history_len"])
+
+        self.metrics: Dict[str, List[Any]] = {
+            "episode_rewards": [],
+            "episode_lengths": [],
+            "losses": [],
+            "epsilon_values": [],
+            "corruption_types": [],
+            "val_history": [],
         }
-        
-        self.logger.info("DQNTrainer initialized")
-    
+
+        self.logger.info(
+            "DQNTrainer ready on %s | state_dim=%d action_dim=%d params=%d",
+            self.device,
+            self.agent.state_dim,
+            self.agent.action_dim,
+            self.agent.get_model_info()["total_parameters"],
+        )
+
+    def _resolve_epsilon_decay(self) -> float:
+        """
+        Return the per-epoch epsilon decay rate.
+
+        When configured as ``None``, solve for the rate that carries epsilon
+        from its initial value to ``epsilon_min`` over ``epsilon_span`` of the
+        planned epochs, so the exploration schedule scales with run length
+        instead of collapsing in the first 15% of it.
+        """
+        configured = self.config.get("epsilon_decay")
+        if configured is not None:
+            return float(configured)
+
+        epochs = max(int(self.config["epochs"]), 1)
+        span = max(1, int(epochs * float(self.config.get("epsilon_span", 0.7))))
+        eps0 = float(self.config["epsilon"])
+        eps_min = float(self.config["epsilon_min"])
+        if eps0 <= eps_min:
+            return 1.0
+        return float((eps_min / eps0) ** (1.0 / span))
+
     def _setup_logging(self) -> logging.Logger:
-        """Setup logging configuration."""
         logger = logging.getLogger("DQNTrainer")
+        if not logger.handlers:
+            os.makedirs("logs", exist_ok=True)
+            handler = logging.StreamHandler()
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+            )
+            logger.addHandler(handler)
         logger.setLevel(logging.INFO)
-        
-        # Create console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        
-        # Create file handler
-        os.makedirs('logs', exist_ok=True)
-        fh = logging.FileHandler(f'logs/dqn_training_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
-        fh.setLevel(logging.DEBUG)
-        
-        # Create formatter
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        ch.setFormatter(formatter)
-        fh.setFormatter(formatter)
-        
-        logger.addHandler(ch)
-        logger.addHandler(fh)
-        
         return logger
-    
-    def generate_training_data(self, difficulty: DifficultyLevel, num_episodes: int) -> List[Dict[str, Any]]:
-        """
-        Generate training episodes.
-        
-        Args:
-            difficulty: Difficulty level for data generation
-            num_episodes: Number of episodes to generate
-            
-        Returns:
-            List of training episodes
-        """
-        self.logger.info(f"Generating {num_episodes} training episodes for {difficulty.value} difficulty")
-        
-        config = self.data_generator.get_config_for_difficulty(difficulty)
-        config.num_rows = self.config.get('episode_rows', 50)
-        
-        episodes = self.data_generator.create_training_episodes(config, num_episodes)
-        
-        self.logger.info(f"Generated {len(episodes)} episodes")
-        return episodes
-    
-    def calculate_td_loss(self, batch: List[Transition]) -> torch.Tensor:
-        """
-        Calculate TD loss for a batch of transitions.
-        
-        Args:
-            batch: Batch of transitions
-            
-        Returns:
-            TD loss tensor
-        """
-        # Extract batch components
-        states = torch.FloatTensor([t.state for t in batch]).to(self.device)
-        actions = torch.LongTensor([t.action for t in batch]).to(self.device)
-        rewards = torch.FloatTensor([t.reward for t in batch]).to(self.device)
-        next_states = torch.FloatTensor([t.next_state for t in batch]).to(self.device)
-        dones = torch.FloatTensor([t.done for t in batch]).to(self.device)
-        
-        # Current Q-values
-        current_q_values = self.agent.q_network(states).gather(1, actions.unsqueeze(1))
-        
-        # Next Q-values from target network
-        next_q_values = self.agent.target_network(next_states).max(1)[0].detach()
-        target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
-        
-        # Calculate loss (MSE)
-        loss = nn.MSELoss()(current_q_values.squeeze(), target_q_values)
-        
-        return loss
-    
-    def train_episode(self, episode: Dict[str, Any]) -> Tuple[float, int]:
-        """
-        Train on a single episode.
-        
-        Args:
-            episode: Training episode data
-            
-        Returns:
-            Tuple of (total_reward, episode_length)
-        """
-        self.agent.reset(episode['rows'][0])  # Reset with first observation
-        self.reward_shaper.reset_episode(len(episode['rows']))
-        
-        total_reward = 0.0
-        episode_length = 0
-        
-        for step_idx, observation in enumerate(episode['rows']):
-            # Get legal actions
-            legal_actions = observation['legal_actions']
-            
-            # Select action
-            action_dict = self.agent.get_action(observation, legal_actions)
-            
-            # Simulate environment response (simplified)
-            # In real implementation, this would call the actual environment
-            next_observation = episode['rows'][step_idx + 1] if step_idx + 1 < len(episode['rows']) else None
-            done = next_observation is None
-            
-            # Calculate reward
-            episode_state = {'step': step_idx, 'total_steps': len(episode['rows'])}
-            reward = self.reward_shaper.calculate_reward(action_dict, observation, episode_state)
-            
-            # Encode states
-            current_state = self.agent._encode_observation(observation)
-            next_state = self.agent._encode_observation(next_observation) if next_observation else current_state
-            
-            # Convert action to index
-            action_str = action_dict['action_type']
-            action_idx = self.agent.reverse_action_mapping.get(action_str, 0)  # Default to skip
-            
-            # Store transition
-            self.replay_buffer.add(current_state, action_idx, reward, next_state, done)
-            
-            # Update agent
-            self.agent.update_reward(reward)
-            
-            total_reward += reward
-            episode_length += 1
-            
-            # Train if we have enough samples
-            if self.replay_buffer.size() >= self.batch_size:
-                self.train_step()
-            
-            if done:
-                break
-        
-        return total_reward, episode_length
-    
-    def train_step(self) -> float:
-        """
-        Perform one training step.
-        
-        Returns:
-            Training loss
-        """
-        # Sample batch
+
+    # -------------------------------------------------------------- learning
+
+    def train_step(self) -> Optional[float]:
+        """One gradient step on a replay batch. Returns the loss, if it ran."""
+        if self.replay_buffer.size() < self.batch_size:
+            return None
+
         batch = self.replay_buffer.sample(self.batch_size)
-        
-        # Calculate loss
-        loss = self.calculate_td_loss(batch)
-        
-        # Backpropagation
-        self.optimizer.zero_grad()
+        states = torch.as_tensor(
+            np.asarray([t.state for t in batch]), dtype=torch.float32, device=self.device
+        )
+        actions = torch.as_tensor(
+            [t.action for t in batch], dtype=torch.int64, device=self.device
+        ).unsqueeze(1)
+        rewards = torch.as_tensor(
+            [t.reward for t in batch], dtype=torch.float32, device=self.device
+        )
+        next_states = torch.as_tensor(
+            np.asarray([t.next_state for t in batch]),
+            dtype=torch.float32,
+            device=self.device,
+        )
+        dones = torch.as_tensor(
+            [float(t.done) for t in batch], dtype=torch.float32, device=self.device
+        )
+
+        q_taken = self.agent.q_network(states).gather(1, actions).squeeze(1)
+        with torch.no_grad():
+            if self.config.get("double_dqn", True):
+                # Double DQN: the online network chooses the bootstrap action
+                # and the target network values it. Plain DQN takes the max over
+                # the target network, so the same noise that inflates an
+                # action's value also selects it, and the bias compounds. Here
+                # that showed up behaviourally: the agent over-corrected clean
+                # streams, degrading dropout and duplicate windows whose raw
+                # error was already near zero.
+                next_actions = (
+                    self.agent.q_network(next_states).argmax(dim=1, keepdim=True)
+                )
+                next_q = (
+                    self.agent.target_network(next_states)
+                    .gather(1, next_actions)
+                    .squeeze(1)
+                )
+            else:
+                next_q = self.agent.target_network(next_states).max(dim=1).values
+            target = rewards + self.gamma * next_q * (1.0 - dones)
+
+        loss = self.loss_fn(q_taken, target)
+        self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.agent.q_network.parameters(), 1.0)  # Gradient clipping
+        nn.utils.clip_grad_norm_(
+            self.agent.q_network.parameters(), self.config["grad_clip"]
+        )
         self.optimizer.step()
-        
-        return loss.item()
-    
-    def train(self, difficulty: DifficultyLevel, epochs: int, save_model: bool = True) -> Dict[str, Any]:
+        return float(loss.item())
+
+    def run_episode(self, corruption_type: str, split: str, seed: int) -> Dict[str, Any]:
+        """Roll out one training episode and push its transitions to replay."""
+        obs = self.env.reset(
+            task_name="iot_stream",
+            window_size=self.config["window_size"],
+            split=split,
+            corruption_type=corruption_type,
+            seed=seed,
+        )
+        self.agent.reset(obs)
+
+        episode_reward = 0.0
+        steps = 0
+        losses = []
+
+        while not obs["done"]:
+            state = self.agent.encode_observation(obs)
+            action = self.agent.get_action(obs, obs["legal_actions"])
+            next_obs = self.env.step(
+                action_type=action["action_type"],
+                column=action["column"],
+                value=action["value"],
+            )
+            next_state = self.agent.encode_observation(next_obs)
+
+            self.replay_buffer.add(
+                state,
+                ACTION_TO_INDEX[action["action_type"]],
+                next_obs["reward"],
+                next_state,
+                next_obs["done"],
+            )
+            self.agent.update_reward(next_obs["reward"])
+
+            episode_reward += next_obs["reward"]
+            steps += 1
+            obs = next_obs
+
+            for _ in range(int(self.config.get("updates_per_step", 1))):
+                loss = self.train_step()
+                if loss is not None:
+                    losses.append(loss)
+
+        return {
+            "reward": episode_reward,
+            "steps": steps,
+            "mean_loss": float(np.mean(losses)) if losses else None,
+        }
+
+    # ------------------------------------------------------------ evaluation
+
+    def evaluate(
+        self,
+        split: str = "val",
+        num_windows: int = 12,
+        seed_base: int = 7000,
+        corruption_types: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
-        Main training loop.
-        
-        Args:
-            difficulty: Difficulty level for training
-            epochs: Number of training epochs
-            save_model: Whether to save the trained model
-            
-        Returns:
-            Training results
+        Evaluate the greedy policy on a split, per fault family.
+
+        Runs inside :meth:`DQNAgent.eval_mode` so that exploration state is
+        restored on exit.
         """
-        self.logger.info(f"Starting DQN training: {epochs} epochs, difficulty={difficulty.value}")
-        
-        # Generate training data
-        episodes = self.generate_training_data(difficulty, epochs)
-        
-        start_time = time.time()
-        
-        for epoch in tqdm(range(epochs), desc="Training"):
-            # Select episode
-            episode = episodes[epoch % len(episodes)]
-            
-            # Train on episode
-            total_reward, episode_length = self.train_episode(episode)
-            
-            # Record metrics
-            self.training_metrics['episode_rewards'].append(total_reward)
-            self.training_metrics['episode_lengths'].append(episode_length)
-            self.training_metrics['epsilon_values'].append(self.agent.epsilon)
-            
-            # Calculate average reward over last 10 episodes
-            if len(self.training_metrics['episode_rewards']) >= 10:
-                avg_reward = np.mean(self.training_metrics['episode_rewards'][-10:])
-                self.training_metrics['avg_rewards'].append(avg_reward)
-            
-            # Update target network
-            if epoch % self.target_update_freq == 0:
+        corruption_types = corruption_types or list(CORRUPTION_TYPES)
+        env = DataCleaningEnvironment(history_len=self.config["history_len"])
+        by_type: Dict[str, Dict[str, float]] = {}
+
+        with self.agent.eval_mode():
+            for ctype in corruption_types:
+                maes, raw_maes, scores, reductions = [], [], [], []
+                for i in range(num_windows):
+                    seed = seed_base + i * 31
+                    obs = env.reset(
+                        task_name="iot_stream",
+                        window_size=self.config["window_size"],
+                        split=split,
+                        corruption_type=ctype,
+                        seed=seed,
+                    )
+                    self.agent.reset(obs)
+                    while not obs["done"]:
+                        action = self.agent.get_action(obs, obs["legal_actions"])
+                        obs = env.step(
+                            action_type=action["action_type"],
+                            column=action["column"],
+                            value=action["value"],
+                        )
+                    m = evaluate_window(
+                        env.cleaned_data, [r.get("value") for r in env.cleaned_data]
+                    )
+                    maes.append(m["mae"])
+                    raw_maes.append(m["raw_mae"])
+                    scores.append(m["score"])
+                    reductions.append(m["error_reduction_pct"])
+
+                by_type[ctype] = {
+                    "mae": float(np.mean(maes)),
+                    "raw_mae": float(np.mean(raw_maes)),
+                    "score": float(np.mean(scores)),
+                    "error_reduction_pct": float(np.mean(reductions)),
+                }
+
+        # Selection criterion: the mean, over fault families, of each family's
+        # MAE relative to its own do-nothing MAE. 1.0 means "no better than
+        # doing nothing"; below 1.0 means a genuine improvement.
+        #
+        # Plain mean MAE is the wrong objective here because the families have
+        # error scales two orders of magnitude apart (mixed ~0.53, duplicate
+        # ~0.03). Averaging raw MAE lets `mixed` dominate selection entirely,
+        # which favours aggressive policies and hides the fact that the same
+        # policy is damaging the benign families.
+        rel = [
+            v["mae"] / v["raw_mae"] if v["raw_mae"] > 1e-9 else (1.0 + v["mae"])
+            for v in by_type.values()
+        ]
+
+        return {
+            "by_corruption": by_type,
+            "mean_mae": float(np.mean([v["mae"] for v in by_type.values()])),
+            "mean_raw_mae": float(np.mean([v["raw_mae"] for v in by_type.values()])),
+            "mean_score": float(np.mean([v["score"] for v in by_type.values()])),
+            "mean_relative_mae": float(np.mean(rel)),
+        }
+
+    # -------------------------------------------------------------- training
+
+    def train(self, epochs: Optional[int] = None, save: bool = True) -> Dict[str, Any]:
+        """Train for ``epochs`` episodes, selecting the best model on validation."""
+        epochs = epochs or self.config["epochs"]
+        os.makedirs("models", exist_ok=True)
+        suffix = self.config.get("checkpoint_suffix", "")
+        best_path = os.path.join("models", f"dqn_iot_stream_best{suffix}.pt")
+        final_path = os.path.join("models", f"dqn_iot_stream_final{suffix}.pt")
+
+        # Draw window seeds from a dedicated RNG so that window position is
+        # independent of the epoch index.
+        window_rng = np.random.RandomState(self.config["seed"] + 1)
+
+        best_val_rel = float("inf")
+        best_val_mae = float("inf")
+        best_epoch = -1
+        best_state = None
+        start = time.time()
+        self.agent.set_training_mode(True)
+
+        self.logger.info("Training %d epochs on %s", epochs, self.device)
+
+        for epoch in range(1, epochs + 1):
+            # Cycle fault families so every epoch trains on a different one.
+            ctype = CORRUPTION_TYPES[(epoch - 1) % len(CORRUPTION_TYPES)]
+            seed = int(window_rng.randint(0, 2**31 - 1))
+
+            res = self.run_episode(ctype, split="train", seed=seed)
+
+            self.metrics["episode_rewards"].append(res["reward"])
+            self.metrics["episode_lengths"].append(res["steps"])
+            self.metrics["corruption_types"].append(ctype)
+            if res["mean_loss"] is not None:
+                self.metrics["losses"].append(res["mean_loss"])
+
+            if epoch % self.config["target_update_frequency"] == 0:
                 self.agent.update_target_network()
-            
-            # Decay epsilon
+
             self.agent.decay_epsilon()
-            
-            # Log progress
-            if epoch % 10 == 0:
-                avg_reward = np.mean(self.training_metrics['episode_rewards'][-10:]) if len(self.training_metrics['episode_rewards']) >= 10 else total_reward
-                self.logger.info(f"Epoch {epoch}: Avg Reward={avg_reward:.3f}, Epsilon={self.agent.epsilon:.3f}")
-        
-        training_time = time.time() - start_time
-        self.logger.info(f"Training completed in {training_time:.2f} seconds")
-        
-        # Save model if requested
-        if save_model:
-            self.save_model(difficulty, epochs)
-        
-        # Generate training report
-        results = self.generate_training_report(difficulty, epochs, training_time)
-        
-        return results
-    
-    def save_model(self, difficulty: DifficultyLevel, epochs: int) -> str:
-        """
-        Save trained model.
-        
-        Args:
-            difficulty: Training difficulty
-            epochs: Number of training epochs
-            
-        Returns:
-            Model file path
-        """
-        os.makedirs('models', exist_ok=True)
-        
-        # Create model filename
-        avg_reward = np.mean(self.training_metrics['episode_rewards'][-10:]) if len(self.training_metrics['episode_rewards']) >= 10 else 0.0
-        model_name = f"dqn_{difficulty.value}_v1.0_epochs{epochs}_reward{avg_reward:.3f}.pt"
-        model_path = os.path.join('models', model_name)
-        
-        # Save model
-        self.agent.save_model(model_path)
-        
-        # Save training metrics
-        metrics_path = model_path.replace('.pt', '_metrics.json')
-        with open(metrics_path, 'w') as f:
-            json.dump(self.training_metrics, f, indent=2)
-        
-        self.logger.info(f"Model saved to {model_path}")
-        return model_path
-    
-    def generate_training_report(self, difficulty: DifficultyLevel, epochs: int, training_time: float) -> Dict[str, Any]:
-        """
-        Generate training report.
-        
-        Args:
-            difficulty: Training difficulty
-            epochs: Number of epochs
-            training_time: Training time in seconds
-            
-        Returns:
-            Training results
-        """
-        if not self.training_metrics['episode_rewards']:
-            return {'error': 'No training data available'}
-        
-        # Calculate statistics
-        final_rewards = self.training_metrics['episode_rewards'][-10:] if len(self.training_metrics['episode_rewards']) >= 10 else self.training_metrics['episode_rewards']
-        
-        results = {
-            'difficulty': difficulty.value,
-            'epochs': epochs,
-            'training_time_seconds': training_time,
-            'final_avg_reward': np.mean(final_rewards),
-            'final_std_reward': np.std(final_rewards),
-            'best_reward': np.max(self.training_metrics['episode_rewards']),
-            'worst_reward': np.min(self.training_metrics['episode_rewards']),
-            'final_epsilon': self.training_metrics['epsilon_values'][-1],
-            'total_transitions': self.replay_buffer.size(),
-            'model_info': self.agent.get_model_info(),
-            'training_metrics': self.training_metrics
+            self.metrics["epsilon_values"].append(self.agent.epsilon)
+
+            if epoch % self.config["eval_every"] == 0 or epoch == epochs:
+                val = self.evaluate(
+                    split="val", num_windows=self.config["val_windows"]
+                )
+                self.metrics["val_history"].append(
+                    {
+                        "epoch": epoch,
+                        "mean_mae": val["mean_mae"],
+                        "mean_raw_mae": val["mean_raw_mae"],
+                        "mean_score": val["mean_score"],
+                        "mean_relative_mae": val["mean_relative_mae"],
+                    }
+                )
+                recent = float(np.mean(self.metrics["episode_rewards"][-10:]))
+                self.logger.info(
+                    "epoch %3d/%d | reward(10) %+.2f | val rel-MAE %.4f "
+                    "| val MAE %.4f (raw %.4f) | eps %.3f",
+                    epoch,
+                    epochs,
+                    recent,
+                    val["mean_relative_mae"],
+                    val["mean_mae"],
+                    val["mean_raw_mae"],
+                    self.agent.epsilon,
+                )
+                if val["mean_relative_mae"] < best_val_rel:
+                    best_val_rel = val["mean_relative_mae"]
+                    best_val_mae = val["mean_mae"]
+                    best_epoch = epoch
+                    # Held in memory, not written yet. Writing here -- outside
+                    # the `save` guard -- meant every test that called
+                    # train(save=False) with the default empty checkpoint
+                    # suffix silently overwrote models/dqn_iot_stream_best.pt
+                    # with a 12-epoch CPU model. That is exactly how the
+                    # published headline checkpoint came to be a test artifact
+                    # scoring worse than doing nothing.
+                    best_state = {
+                        "q": copy.deepcopy(self.agent.q_network.state_dict()),
+                        "target": copy.deepcopy(
+                            self.agent.target_network.state_dict()
+                        ),
+                        "epsilon": self.agent.epsilon,
+                    }
+                    self.logger.info(
+                        "  new best on validation (rel-MAE %.4f) at epoch %d",
+                        best_val_rel,
+                        epoch,
+                    )
+
+        training_time = time.time() - start
+
+        if save:
+            if best_state is not None:
+                # Persist the validation-selected weights, then restore them
+                # into the live agent so the returned trainer holds the model
+                # the checkpoint describes.
+                current = {
+                    "q": copy.deepcopy(self.agent.q_network.state_dict()),
+                    "target": copy.deepcopy(self.agent.target_network.state_dict()),
+                    "epsilon": self.agent.epsilon,
+                }
+                self.agent.q_network.load_state_dict(best_state["q"])
+                self.agent.target_network.load_state_dict(best_state["target"])
+                self.agent.epsilon = best_state["epsilon"]
+                self.agent.save_model(best_path)
+                self.logger.info(
+                    "best checkpoint (epoch %d, val rel-MAE %.4f) -> %s",
+                    best_epoch,
+                    best_val_rel,
+                    best_path,
+                )
+                # Restore the final-epoch weights for final_path below.
+                self.agent.q_network.load_state_dict(current["q"])
+                self.agent.target_network.load_state_dict(current["target"])
+                self.agent.epsilon = current["epsilon"]
+            self.agent.save_model(final_path)
+            summary = {
+                "config": {k: v for k, v in self.config.items()},
+                "device": str(self.device),
+                "epochs": epochs,
+                "training_time_sec": training_time,
+                "best_val_relative_mae": best_val_rel,
+                "best_val_mae": best_val_mae,
+                "best_epoch": best_epoch,
+                "state_dim": self.agent.state_dim,
+                "action_dim": self.agent.action_dim,
+                "episode_rewards": self.metrics["episode_rewards"],
+                "epsilon_values": self.metrics["epsilon_values"],
+                "losses": self.metrics["losses"],
+                "corruption_types": self.metrics["corruption_types"],
+                "val_history": self.metrics["val_history"],
+            }
+            metrics_path = os.path.join(
+                "models", f"dqn_iot_stream_metrics{suffix}.json"
+            )
+            with open(metrics_path, "w") as fh:
+                json.dump(summary, fh, indent=2)
+
+        self.plot_training_curves(
+            save_path=f"plots/dqn_iot_training_curves{suffix or ''}.png"
+        )
+
+        return {
+            "training_time": training_time,
+            "best_val_relative_mae": best_val_rel,
+            "best_val_mae": best_val_mae,
+            "best_epoch": best_epoch,
+            # None when save=False: nothing was written, so there is no path to
+            # hand back and no caller can be misled into loading a stale file.
+            "best_model_path": best_path if (save and best_state) else None,
+            "final_model_path": final_path if save else None,
+            "best_state": best_state,
+            "metrics": self.metrics,
         }
-        
-        # Save report
-        os.makedirs('reports', exist_ok=True)
-        report_path = f'reports/dqn_training_report_{difficulty.value}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
-        with open(report_path, 'w') as f:
-            json.dump(results, f, indent=2)
-        
-        self.logger.info(f"Training report saved to {report_path}")
-        
-        # Plot training curves
-        self.plot_training_curves(difficulty)
-        
-        return results
-    
-    def plot_training_curves(self, difficulty: DifficultyLevel):
-        """
-        Plot training curves.
-        
-        Args:
-            difficulty: Training difficulty
-        """
-        os.makedirs('plots', exist_ok=True)
-        
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        fig.suptitle(f'DQN Training Curves - {difficulty.value.upper()} Difficulty')
-        
-        # Episode rewards
-        axes[0, 0].plot(self.training_metrics['episode_rewards'])
-        axes[0, 0].set_title('Episode Rewards')
-        axes[0, 0].set_xlabel('Episode')
-        axes[0, 0].set_ylabel('Reward')
-        axes[0, 0].grid(True)
-        
-        # Average rewards (moving average)
-        if self.training_metrics['avg_rewards']:
-            axes[0, 1].plot(self.training_metrics['avg_rewards'])
-            axes[0, 1].set_title('Average Reward (10-episode moving average)')
-            axes[0, 1].set_xlabel('Episode')
-            axes[0, 1].set_ylabel('Average Reward')
-            axes[0, 1].grid(True)
-        
-        # Epsilon decay
-        axes[1, 0].plot(self.training_metrics['epsilon_values'])
-        axes[1, 0].set_title('Epsilon Decay')
-        axes[1, 0].set_xlabel('Episode')
-        axes[1, 0].set_ylabel('Epsilon')
-        axes[1, 0].grid(True)
-        
-        # Episode lengths
-        axes[1, 1].plot(self.training_metrics['episode_lengths'])
-        axes[1, 1].set_title('Episode Lengths')
-        axes[1, 1].set_xlabel('Episode')
-        axes[1, 1].set_ylabel('Steps')
-        axes[1, 1].grid(True)
-        
+
+    # ----------------------------------------------------------------- plots
+
+    def plot_training_curves(
+        self, save_path: str = "plots/dqn_iot_training_curves.png"
+    ) -> str:
+        """Plot episode return, exploration schedule, TD loss and validation MAE."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        rewards = self.metrics["episode_rewards"]
+        fig, axes = plt.subplots(2, 2, figsize=(13, 8))
+
+        axes[0][0].plot(rewards, alpha=0.3, color="#1f77b4", label="episode")
+        if len(rewards) >= 10:
+            kernel = np.ones(10) / 10.0
+            smooth = np.convolve(rewards, kernel, mode="valid")
+            axes[0][0].plot(
+                range(9, len(rewards)), smooth, color="#1f77b4", lw=2, label="10-ep mean"
+            )
+        axes[0][0].set_title("Episode return", fontweight="bold")
+        axes[0][0].set_xlabel("epoch")
+        axes[0][0].legend()
+        axes[0][0].grid(alpha=0.3)
+
+        axes[0][1].plot(self.metrics["epsilon_values"], color="#d62728")
+        axes[0][1].set_title("Exploration schedule (epsilon)", fontweight="bold")
+        axes[0][1].set_xlabel("epoch")
+        axes[0][1].grid(alpha=0.3)
+
+        if self.metrics["losses"]:
+            axes[1][0].plot(self.metrics["losses"], color="#7f7f7f", alpha=0.8)
+            axes[1][0].set_yscale("log")
+        axes[1][0].set_title("TD loss (Huber)", fontweight="bold")
+        axes[1][0].set_xlabel("epoch")
+        axes[1][0].grid(alpha=0.3)
+
+        vh = self.metrics["val_history"]
+        if vh:
+            ep = [v["epoch"] for v in vh]
+            axes[1][1].plot(ep, [v["mean_mae"] for v in vh], "o-", label="RL agent")
+            axes[1][1].plot(
+                ep,
+                [v["mean_raw_mae"] for v in vh],
+                "--",
+                color="#888",
+                label="do-nothing",
+            )
+            axes[1][1].legend()
+        axes[1][1].set_title("Validation MAE", fontweight="bold")
+        axes[1][1].set_xlabel("epoch")
+        axes[1][1].grid(alpha=0.3)
+
         plt.tight_layout()
-        
-        plot_path = f'plots/dqn_training_curves_{difficulty.value}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png'
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, dpi=150)
         plt.close()
-        
-        self.logger.info(f"Training curves saved to {plot_path}")
-    
-    def evaluate_model(self, model_path: str, test_episodes: int = 50) -> Dict[str, Any]:
-        """
-        Evaluate trained model.
-        
-        Args:
-            model_path: Path to trained model
-            test_episodes: Number of test episodes
-            
-        Returns:
-            Evaluation results
-        """
-        self.logger.info(f"Evaluating model: {model_path}")
-        
-        # Load model
-        self.agent.load_model(model_path)
-        self.agent.set_training_mode(False)  # Set to inference mode
-        
-        # Generate test data
-        difficulty = DifficultyLevel.EASY  # Test on easy difficulty
-        test_episodes_data = self.generate_training_data(difficulty, test_episodes)
-        
-        evaluation_results = {
-            'test_rewards': [],
-            'test_lengths': [],
-            'success_rate': 0.0,
-            'avg_reward': 0.0,
-            'avg_steps': 0.0
-        }
-        
-        for episode in test_episodes_data:
-            total_reward, episode_length = self.evaluate_episode(episode)
-            evaluation_results['test_rewards'].append(total_reward)
-            evaluation_results['test_lengths'].append(episode_length)
-        
-        # Calculate statistics
-        evaluation_results['avg_reward'] = np.mean(evaluation_results['test_rewards'])
-        evaluation_results['avg_steps'] = np.mean(evaluation_results['test_lengths'])
-        evaluation_results['success_rate'] = np.mean([r > 0 for r in evaluation_results['test_rewards']])
-        
-        self.logger.info(f"Evaluation completed: Avg Reward={evaluation_results['avg_reward']:.3f}")
-        
-        return evaluation_results
-    
-    def evaluate_episode(self, episode: Dict[str, Any]) -> Tuple[float, int]:
-        """
-        Evaluate on a single episode (inference mode).
-        
-        Args:
-            episode: Test episode
-            
-        Returns:
-            Tuple of (total_reward, episode_length)
-        """
-        self.agent.reset(episode['rows'][0])
-        self.reward_shaper.reset_episode(len(episode['rows']))
-        
-        total_reward = 0.0
-        episode_length = 0
-        
-        for step_idx, observation in enumerate(episode['rows']):
-            # Get action (no exploration)
-            action_dict = self.agent.get_action(observation, observation['legal_actions'])
-            
-            # Calculate reward
-            episode_state = {'step': step_idx, 'total_steps': len(episode['rows'])}
-            reward = self.reward_shaper.calculate_reward(action_dict, observation, episode_state)
-            
-            total_reward += reward
-            episode_length += 1
-            
-            if step_idx >= len(episode['rows']) - 1:
-                break
-        
-        return total_reward, episode_length
+        return save_path
 
 
-def main():
-    """Main training script."""
-    parser = argparse.ArgumentParser(description='Train DQN for data cleaning')
-    parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
-    parser.add_argument('--task', type=str, choices=['easy', 'medium', 'hard'], default='easy', help='Task difficulty')
-    parser.add_argument('--save', action='store_true', help='Save trained model')
-    parser.add_argument('--device', type=str, default='auto', help='Device (cpu/cuda/auto)')
-    parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
-    parser.add_argument('--learning-rate', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    
+def train_seeds(
+    seeds: List[int],
+    epochs: int,
+    device: str = "auto",
+    val_windows: int = 30,
+    eval_every: int = 25,
+) -> Dict[str, Any]:
+    """
+    Train one agent per seed, each selected on validation.
+
+    Reported results are aggregated across seeds. A single DQN run on this task
+    has a validation relative-MAE spread of roughly 0.93 to 1.08, so a
+    single-seed number would say more about the seed than about the method.
+    """
+    runs = []
+    for seed in seeds:
+        trainer = DQNTrainer(
+            {
+                "epochs": epochs,
+                "device": device,
+                "seed": seed,
+                "val_windows": val_windows,
+                "eval_every": eval_every,
+                "checkpoint_suffix": f"_seed{seed}",
+            }
+        )
+        result = trainer.train(epochs=epochs, save=True)
+        trainer.agent.load_model(result["best_model_path"])
+        test = trainer.evaluate(split="test", num_windows=30, seed_base=2026)
+        runs.append(
+            {
+                "seed": seed,
+                "best_epoch": result["best_epoch"],
+                "val_relative_mae": result["best_val_relative_mae"],
+                "checkpoint": result["best_model_path"],
+                "test": test,
+            }
+        )
+        trainer.logger.info(
+            "seed %d done: val rel-MAE %.4f, test rel-MAE %.4f",
+            seed,
+            result["best_val_relative_mae"],
+            test["mean_relative_mae"],
+        )
+
+    # The headline checkpoint is the one with the best VALIDATION score.
+    best = min(runs, key=lambda r: r["val_relative_mae"])
+    import shutil
+
+    shutil.copyfile(best["checkpoint"], "models/dqn_iot_stream_best.pt")
+    shutil.copyfile(
+        best["checkpoint"].replace("_best_", "_final_")
+        if "_best_" in best["checkpoint"]
+        else best["checkpoint"],
+        "models/dqn_iot_stream_final.pt",
+    )
+    shutil.copyfile(
+        f"models/dqn_iot_stream_metrics_seed{best['seed']}.json",
+        "models/dqn_iot_stream_metrics.json",
+    )
+    shutil.copyfile(
+        f"plots/dqn_iot_training_curves_seed{best['seed']}.png",
+        "plots/dqn_iot_training_curves.png",
+    )
+
+    summary = {
+        "seeds": seeds,
+        "epochs": epochs,
+        "selected_seed": best["seed"],
+        "runs": runs,
+        "val_relative_mae": {
+            "mean": float(np.mean([r["val_relative_mae"] for r in runs])),
+            "std": float(np.std([r["val_relative_mae"] for r in runs])),
+            "min": float(np.min([r["val_relative_mae"] for r in runs])),
+            "max": float(np.max([r["val_relative_mae"] for r in runs])),
+        },
+    }
+    with open("models/dqn_iot_stream_seed_summary.json", "w") as fh:
+        json.dump(summary, fh, indent=2)
+    return summary
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--epochs", type=int, default=DEFAULT_CONFIG["epochs"])
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_CONFIG["batch_size"])
+    parser.add_argument(
+        "--learning-rate", type=float, default=DEFAULT_CONFIG["learning_rate"]
+    )
+    parser.add_argument("--seed", type=int, default=DEFAULT_CONFIG["seed"])
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Train one agent per seed and aggregate (recommended).",
+    )
+    parser.add_argument("--device", type=str, default="auto", help="cpu | cuda | auto")
+    parser.add_argument("--no-save", action="store_true")
     args = parser.parse_args()
-    
-    # Setup device
-    if args.device == 'auto':
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    else:
-        device = args.device
-    
-    # Training configuration
-    config = {
-        'device': device,
-        'state_dim': 50,
-        'action_dim': 7,
-        'learning_rate': args.learning_rate,
-        'batch_size': args.batch_size,
-        'gamma': 0.99,
-        'epsilon': 1.0,
-        'epsilon_min': 0.01,
-        'epsilon_decay': 0.995,
-        'target_update_frequency': 10,
-        'buffer_capacity': 10000,
-        'episode_rows': 50,
-        'seed': args.seed
-    }
-    
-    # Initialize trainer
-    trainer = DQNTrainer(config)
-    
-    # Convert task to difficulty
-    difficulty_map = {
-        'easy': DifficultyLevel.EASY,
-        'medium': DifficultyLevel.MEDIUM,
-        'hard': DifficultyLevel.HARD
-    }
-    difficulty = difficulty_map[args.task]
-    
-    # Train model
-    results = trainer.train(difficulty, args.epochs, save_model=args.save)
-    
-    # Print results
-    print("\n" + "="*60)
-    print("TRAINING RESULTS")
-    print("="*60)
-    print(f"Difficulty: {results['difficulty'].upper()}")
-    print(f"Epochs: {results['epochs']}")
-    print(f"Training Time: {results['training_time_seconds']:.2f} seconds")
-    print(f"Final Average Reward: {results['final_avg_reward']:.3f}")
-    print(f"Best Reward: {results['best_reward']:.3f}")
-    print(f"Final Epsilon: {results['final_epsilon']:.3f}")
-    print(f"Total Transitions: {results['total_transitions']}")
-    print("="*60)
+
+    if args.seeds:
+        summary = train_seeds(args.seeds, epochs=args.epochs, device=args.device)
+        print("\n" + "=" * 72)
+        print(f"MULTI-SEED TRAINING COMPLETE ({len(args.seeds)} seeds)")
+        print("=" * 72)
+        v = summary["val_relative_mae"]
+        print(
+            f"Validation relative-MAE: {v['mean']:.4f} +/- {v['std']:.4f} "
+            f"(range {v['min']:.4f} - {v['max']:.4f})"
+        )
+        print(f"Selected seed (best on validation): {summary['selected_seed']}")
+        print("\nPer-seed held-out TEST relative-MAE:")
+        for r in summary["runs"]:
+            print(
+                f"  seed {r['seed']:<5} val {r['val_relative_mae']:.4f} "
+                f"-> test {r['test']['mean_relative_mae']:.4f} "
+                f"(best epoch {r['best_epoch']})"
+            )
+        print("=" * 72)
+        return
+
+    trainer = DQNTrainer(
+        {
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "learning_rate": args.learning_rate,
+            "seed": args.seed,
+            "device": args.device,
+        }
+    )
+    result = trainer.train(epochs=args.epochs, save=not args.no_save)
+
+    print("\n" + "=" * 72)
+    print("IOT STREAM DQN TRAINING COMPLETE")
+    print("=" * 72)
+    print(f"Device            : {trainer.device}")
+    print(f"Epochs            : {args.epochs}")
+    print(f"Training time     : {result['training_time']:.1f}s")
+    print(f"Best val rel-MAE  : {result['best_val_relative_mae']:.4f} (epoch {result['best_epoch']})")
+    print(f"  its val MAE     : {result['best_val_mae']:.4f}")
+
+    print("\nHeld-out TEST evaluation of the best checkpoint:")
+    trainer.agent.load_model(result["best_model_path"])
+    test = trainer.evaluate(split="test", num_windows=30, seed_base=2026)
+    for ctype, d in test["by_corruption"].items():
+        print(
+            f"  {ctype:<10} raw MAE {d['raw_mae']:.4f} -> RL MAE {d['mae']:.4f} "
+            f"({d['error_reduction_pct']:+.1f}%, score {d['score']:.3f})"
+        )
+    print(f"  {'MEAN':<10} raw MAE {test['mean_raw_mae']:.4f} -> RL MAE {test['mean_mae']:.4f}")
+    print("=" * 72)
 
 
 if __name__ == "__main__":
