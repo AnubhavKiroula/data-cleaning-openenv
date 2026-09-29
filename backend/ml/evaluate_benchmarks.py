@@ -240,6 +240,7 @@ def plot_comparison(
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -267,18 +268,39 @@ def plot_comparison(
     axes[0].legend()
     axes[0].grid(alpha=0.3, axis="y")
 
-    axes[1].axhline(1.0, color="#333", ls="--", lw=1.2, label="Do nothing (= 1.0)")
-    axes[1].bar(x - w / 2, df["Rule(txt) rel"], w,
-                label="Rule filter (textbook z=4)", color="#ff7f0e")
-    axes[1].bar(x + w / 2, df["RL rel"], w, label="RL-Cleanse DQN", color="#1f77b4")
-    axes[1].set_title(
-        "MAE relative to doing nothing (<1.0 is an improvement)", fontweight="bold"
+    # Log scale: the textbook filter reaches 11x on the duplicate family, which
+    # on a linear axis flattens every RL bar onto the 1.0 reference line and
+    # hides the comparison this panel exists to show.
+    for bars in (
+        axes[1].bar(x - w / 2, df["Rule(txt) rel"], w,
+                    label="Rule filter (textbook z=4)", color="#ff7f0e"),
+        axes[1].bar(x + w / 2, df["RL rel"], w,
+                    label="RL-Cleanse DQN", color="#1f77b4"),
+    ):
+        for rect in bars:
+            axes[1].annotate(
+                f"{rect.get_height():.2f}",
+                (rect.get_x() + rect.get_width() / 2, rect.get_height()),
+                textcoords="offset points", xytext=(0, 3),
+                ha="center", fontsize=7.5,
+            )
+    axes[1].set_yscale("log")
+    axes[1].axhline(1.0, color="#333", ls="--", lw=1.4, zorder=0,
+                    label="Do nothing (= 1.0)")
+    axes[1].set_ylim(0.5, 22)
+    axes[1].set_yticks([0.5, 1, 2, 5, 10, 20])
+    axes[1].get_yaxis().set_major_formatter(
+        mticker.FuncFormatter(lambda v, _: f"{v:g}")
     )
-    axes[1].set_ylabel("MAE / raw MAE")
+    axes[1].set_title(
+        "MAE relative to doing nothing (log scale; <1.0 is an improvement)",
+        fontweight="bold",
+    )
+    axes[1].set_ylabel("method MAE / do-nothing MAE")
     axes[1].set_xticks(x)
     axes[1].set_xticklabels(df["Corruption"])
-    axes[1].legend()
-    axes[1].grid(alpha=0.3, axis="y")
+    axes[1].legend(loc="upper left", fontsize=8.5)
+    axes[1].grid(alpha=0.3, axis="y", which="both")
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)

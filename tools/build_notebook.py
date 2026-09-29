@@ -685,15 +685,35 @@ axes[0].set_ylabel("MAE vs. measured ground truth")
 axes[0].set_xticks(x); axes[0].set_xticklabels(results_df["Fault family"])
 axes[0].legend(); axes[0].grid(alpha=0.3, axis="y")
 
-axes[1].axhline(1.0, color="#333", ls="--", lw=1.4, label="Do nothing (= 1.0)")
-axes[1].bar(x - w / 2, results_df["Rule(txt) rel"], w,
-            label="Rule filter (textbook z=4)", color="#ff7f0e")
-axes[1].bar(x + w / 2, results_df["RL rel"], w, label="RL-Cleanse DQN", color="#1f77b4")
-axes[1].set_title("MAE relative to doing nothing (< 1.0 is an improvement)",
+# Log scale: the textbook filter reaches 11x on the duplicate family, which on
+# a linear axis flattens the RL bars into the 1.0 reference line and hides the
+# very comparison this panel exists to show.
+import matplotlib.ticker as mticker
+
+for bars in (
+    axes[1].bar(x - w / 2, results_df["Rule(txt) rel"], w,
+                label="Rule filter (textbook z=4)", color="#ff7f0e"),
+    axes[1].bar(x + w / 2, results_df["RL rel"], w,
+                label="RL-Cleanse DQN", color="#1f77b4"),
+):
+    for rect in bars:
+        axes[1].annotate(f"{rect.get_height():.2f}",
+                         (rect.get_x() + rect.get_width() / 2, rect.get_height()),
+                         textcoords="offset points", xytext=(0, 3),
+                         ha="center", fontsize=7.5)
+axes[1].set_yscale("log")
+axes[1].axhline(1.0, color="#333", ls="--", lw=1.4, zorder=0,
+                label="Do nothing (= 1.0)")
+axes[1].set_ylim(0.5, 20)
+axes[1].set_yticks([0.5, 1, 2, 5, 10, 20])
+axes[1].get_yaxis().set_major_formatter(
+    mticker.FuncFormatter(lambda v, _: f"{v:g}"))
+axes[1].set_title("MAE relative to doing nothing (log scale; < 1.0 is better)",
                   fontweight="bold")
 axes[1].set_ylabel("method MAE / do-nothing MAE")
 axes[1].set_xticks(x); axes[1].set_xticklabels(results_df["Fault family"])
-axes[1].legend(); axes[1].grid(alpha=0.3, axis="y")
+axes[1].legend(loc="upper left", fontsize=8.5)
+axes[1].grid(alpha=0.3, axis="y", which="both")
 
 plt.tight_layout()
 os.makedirs("plots", exist_ok=True)
