@@ -515,6 +515,63 @@ class TestTrainingPipeline:
             )
         assert np.isfinite(t.train_step())
 
+    def test_train_with_save_false_writes_no_checkpoint(self, tmp_path, monkeypatch):
+        """
+        Regression test: train(save=False) must not touch models/ at all.
+
+        The best-checkpoint save used to sit outside the `save` guard, so every
+        run of this very test class -- train(epochs=12, save=False) with the
+        default empty checkpoint suffix -- overwrote
+        models/dqn_iot_stream_best.pt with a 12-epoch CPU model. The published
+        headline checkpoint was a test artifact, and it scored worse on the
+        spike family than doing nothing. The test suite was corrupting the
+        thing the project reports.
+        """
+        monkeypatch.chdir(tmp_path)
+        trainer = DQNTrainer(
+            {
+                "epochs": 8,
+                "device": "cpu",
+                "batch_size": 16,
+                "val_windows": 1,
+                "eval_every": 4,
+                "seed": 77,
+            }
+        )
+        result = trainer.train(epochs=8, save=False)
+
+        written = (
+            sorted(os.listdir(tmp_path / "models"))
+            if (tmp_path / "models").exists()
+            else []
+        )
+        assert written == [], f"train(save=False) wrote {written}"
+        # The selected weights are still available, just in memory.
+        assert result["best_state"] is not None
+        assert result["best_model_path"] is None
+        assert result["final_model_path"] is None
+
+    def test_train_with_save_true_writes_the_selected_weights(self, tmp_path, monkeypatch):
+        """The persisted best checkpoint must be the validation-selected one."""
+        monkeypatch.chdir(tmp_path)
+        trainer = DQNTrainer(
+            {
+                "epochs": 8,
+                "device": "cpu",
+                "batch_size": 16,
+                "val_windows": 1,
+                "eval_every": 4,
+                "seed": 77,
+            }
+        )
+        result = trainer.train(epochs=8, save=True)
+        assert os.path.exists(result["best_model_path"])
+
+        reloaded = DQNAgent(device="cpu")
+        reloaded.load_model(result["best_model_path"])
+        for key, tensor in result["best_state"]["q"].items():
+            assert torch.equal(tensor, reloaded.q_network.state_dict()[key])
+
     def test_plot_is_written(self, trained, tmp_path):
         trainer, _ = trained
         path = trainer.plot_training_curves(str(tmp_path / "curves.png"))

@@ -31,6 +31,7 @@ hours, and never passed a corruption type, so it only ever saw ``mixed``.
 """
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -370,6 +371,7 @@ class DQNTrainer:
         best_val_rel = float("inf")
         best_val_mae = float("inf")
         best_epoch = -1
+        best_state = None
         start = time.time()
         self.agent.set_training_mode(True)
 
@@ -423,16 +425,52 @@ class DQNTrainer:
                     best_val_rel = val["mean_relative_mae"]
                     best_val_mae = val["mean_mae"]
                     best_epoch = epoch
-                    self.agent.save_model(best_path)
+                    # Held in memory, not written yet. Writing here -- outside
+                    # the `save` guard -- meant every test that called
+                    # train(save=False) with the default empty checkpoint
+                    # suffix silently overwrote models/dqn_iot_stream_best.pt
+                    # with a 12-epoch CPU model. That is exactly how the
+                    # published headline checkpoint came to be a test artifact
+                    # scoring worse than doing nothing.
+                    best_state = {
+                        "q": copy.deepcopy(self.agent.q_network.state_dict()),
+                        "target": copy.deepcopy(
+                            self.agent.target_network.state_dict()
+                        ),
+                        "epsilon": self.agent.epsilon,
+                    }
                     self.logger.info(
-                        "  new best on validation (rel-MAE %.4f) -> %s",
+                        "  new best on validation (rel-MAE %.4f) at epoch %d",
                         best_val_rel,
-                        best_path,
+                        epoch,
                     )
 
         training_time = time.time() - start
 
         if save:
+            if best_state is not None:
+                # Persist the validation-selected weights, then restore them
+                # into the live agent so the returned trainer holds the model
+                # the checkpoint describes.
+                current = {
+                    "q": copy.deepcopy(self.agent.q_network.state_dict()),
+                    "target": copy.deepcopy(self.agent.target_network.state_dict()),
+                    "epsilon": self.agent.epsilon,
+                }
+                self.agent.q_network.load_state_dict(best_state["q"])
+                self.agent.target_network.load_state_dict(best_state["target"])
+                self.agent.epsilon = best_state["epsilon"]
+                self.agent.save_model(best_path)
+                self.logger.info(
+                    "best checkpoint (epoch %d, val rel-MAE %.4f) -> %s",
+                    best_epoch,
+                    best_val_rel,
+                    best_path,
+                )
+                # Restore the final-epoch weights for final_path below.
+                self.agent.q_network.load_state_dict(current["q"])
+                self.agent.target_network.load_state_dict(current["target"])
+                self.agent.epsilon = current["epsilon"]
             self.agent.save_model(final_path)
             summary = {
                 "config": {k: v for k, v in self.config.items()},
@@ -465,8 +503,11 @@ class DQNTrainer:
             "best_val_relative_mae": best_val_rel,
             "best_val_mae": best_val_mae,
             "best_epoch": best_epoch,
-            "best_model_path": best_path,
-            "final_model_path": final_path,
+            # None when save=False: nothing was written, so there is no path to
+            # hand back and no caller can be misled into loading a stale file.
+            "best_model_path": best_path if (save and best_state) else None,
+            "final_model_path": final_path if save else None,
+            "best_state": best_state,
             "metrics": self.metrics,
         }
 
