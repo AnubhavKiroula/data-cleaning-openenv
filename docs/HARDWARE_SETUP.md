@@ -6,6 +6,26 @@
 
 ---
 
+## 0. Status of every claim in this document
+
+Nothing in this document has been run on physical hardware. The table below
+states, for each component, what has actually been executed.
+
+| Component | Status | What that means |
+|---|---|---|
+| Requisition list (§1) | **Planned** | Parts specified; not yet procured. |
+| Circuit design and pinout (§3) | **Designed** | Schematic and pin mapping are complete and internally consistent; never physically wired. |
+| Wokwi / Tinkercad simulation (§2) | **Planned** | The wiring is intended to be validated in simulation. No simulation run is recorded in this repository, so no simulation result is claimed. |
+| ESP32 firmware sketch (§4) | **Written, not flashed** | The sketch compiles against the named libraries by inspection only. It has not been built in the Arduino IDE or flashed to a board. |
+| Serial bridge `scripts/live_iot_inference.py` (§5) | **Implemented; replay-tested only** | Runs end to end via `--replay`, which drives it from the UCI test split. The `--port` serial path has never been connected to a board. |
+| Inference latency (§5) | **Measured on host CPU only** | The bridge reports its own host-CPU latency. No ESP32 or on-device figure is claimed anywhere. |
+| Live demo procedure (§6) | **Planned** | A script for a demonstration that has not been rehearsed on hardware. |
+
+The trained policy, the streaming environment, the rule baseline, the benchmark
+and the notebook **are** implemented and executed; see `docs/PROFESSOR_BRIEFING.md`
+for what they measured. The gap is specifically the physical layer.
+
+
 ## 1. College Hardware Requisition List
 
 Present this itemized list to your college department/lab in-charge to requisition the necessary hardware components:
@@ -148,102 +168,76 @@ void loop() {
 
 ## 5. Laptop Real-Time Denoising Bridge (`scripts/live_iot_inference.py`)
 
-Run this Python script on your Ubuntu laptop. It reads live readings from the USB Serial port (`/dev/ttyUSB0` or `/dev/ttyACM0`), passes each reading sequentially through the trained **RL-Cleanse DQN model**, and outputs the cleaned telemetry in real time:
+**Status: implemented; exercised in replay mode only.**
 
-```python
-"""
-RL-Cleanse: Real-Time Live Inference Bridge for Physical IoT Microcontrollers.
-Reads live sensor JSON packets from serial port and denoises them using DQN.
-"""
+The bridge is a real file in this repository, not a listing in a document. It
+reads newline-delimited JSON packets from the serial port, denoises each reading
+as it arrives, and prints the decision:
 
-import serial
-import json
-import time
-import torch
-import numpy as np
-from backend.ml.dqn_model import DQNAgent
-
-SERIAL_PORT = "/dev/ttyUSB0"  # or /dev/ttyACM0
-BAUD_RATE = 115200
-MODEL_PATH = "models/dqn_iot_stream_best.pt"
-
-def run_live_inference():
-    print(f"Loading trained RL-Cleanse model from {MODEL_PATH}...")
-    agent = DQNAgent(state_dim=50, action_dim=7, device="cpu")
-    agent.load_model(MODEL_PATH)
-    agent.set_training_mode(False)
-    
-    print(f"Connecting to microcontroller on {SERIAL_PORT} @ {BAUD_RATE} baud...")
-    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=2)
-    time.sleep(2)  # Wait for ESP32 boot
-    
-    rolling_history = []
-    print("\nListening for live sensor readings (Ctrl+C to stop)...")
-    print(f"{'Time':<8} | {'Raw Value':<10} | {'RL Action':<16} | {'Cleaned Value':<12}")
-    print("-" * 55)
-    
-    while True:
-        try:
-            line = ser.readline().decode('utf-8').strip()
-            if not line or not line.startswith("{"):
-                continue
-                
-            packet = json.loads(line)
-            raw_val = packet.get("value")
-            t = packet.get("timestep", 0)
-            
-            # Construct observation with rolling history
-            r_mean = float(np.mean(rolling_history)) if rolling_history else (raw_val or 0.0)
-            r_std = float(np.std(rolling_history)) if rolling_history else 0.0
-            r_med = float(np.median(rolling_history)) if rolling_history else (raw_val or 0.0)
-            
-            obs = {
-                "current_row": t,
-                "total_rows": 1000,
-                "current_data": {
-                    "sensor": "CO(GT)",
-                    "value": raw_val,
-                    "timestep": t % 24
-                },
-                "rolling_history": rolling_history[-5:],
-                "rolling_stats": {
-                    "mean": r_mean,
-                    "std": r_std,
-                    "median": r_med
-                },
-                "issues_detected": [],
-                "legal_actions": ["skip", "fill_missing", "remove_outlier", "fix_type", "remove_duplicate"]
-            }
-            
-            # Agent selects action
-            action_dict = agent.get_action(obs, obs["legal_actions"])
-            action_type = action_dict["action_type"]
-            
-            # Compute cleaned value
-            if action_type == "skip":
-                cleaned_val = raw_val
-            elif action_type in ["remove_outlier", "fill_missing"]:
-                cleaned_val = r_med
-            elif action_type == "fix_type":
-                cleaned_val = 0.5 * (raw_val or r_mean) + 0.5 * r_mean
-            else:
-                cleaned_val = action_dict.get("value", raw_val)
-                
-            rolling_history.append(cleaned_val)
-            if len(rolling_history) > 10:
-                rolling_history.pop(0)
-                
-            print(f"{t:<8} | {str(raw_val):<10} | {action_type:<16} | {cleaned_val:<12.3f}")
-            
-        except KeyboardInterrupt:
-            print("\nStopped live demo.")
-            break
-        except Exception as e:
-            print(f"Error parsing packet: {e}")
-
-if __name__ == "__main__":
-    run_live_inference()
+```json
+{"timestep": 41, "sensor": "CO(GT)", "value": 2.45}
 ```
+
+Run it against a board, or without one:
+
+```bash
+# With hardware attached (never yet exercised — no board has been connected)
+python scripts/live_iot_inference.py --port /dev/ttyUSB0 --baud 115200
+
+# Without hardware: replays a corrupted window from the UCI test split
+python scripts/live_iot_inference.py --replay --steps 48
+```
+
+Replay output, copied verbatim from `--replay --steps 14`:
+
+```text
+   t       raw            action   cleaned      ms     truth    |err|
+---------------------------------------------------------------------
+   0     1.900              skip     1.900    0.50     1.900    0.000
+   1     2.400              skip     2.400    0.28     2.400    0.000
+   2     2.000              skip     2.000    0.24     2.000    0.000
+   3     1.266              skip     1.266    0.23     1.300    0.034
+   4     1.266              skip     1.266    0.23     1.000    0.266
+   5     1.098              skip     1.098    0.22     1.200    0.102
+   6     1.363              skip     1.363    0.21     1.500    0.137
+   7     1.129              skip     1.129    0.23     1.300    0.171
+   8     1.295              skip     1.295    0.22     1.500    0.205
+   9     1.500              skip     1.500    0.22     1.500    0.000
+  10     2.100              skip     2.100    0.23     2.100    0.000
+  11     2.600              skip     2.600    0.21     2.600    0.000
+  12     3.000              skip     3.000    0.20     3.000    0.000
+  13     2.000              skip     2.000    0.22     2.000    0.000
+
+Host-CPU inference latency over 14 readings: mean 0.25 ms, p95 0.36 ms
+Replay MAE vs. ground truth: 0.0653
+```
+
+Note that the policy chose `skip` at every step of this particular window: it
+was a benign stretch of the test split with no large transient, and skipping is
+the correct decision there. A window that exercises the corrective actions is
+plotted in section 8 of the notebook.
+
+### Design note: the bridge reuses the trained environment's semantics
+
+`StreamDenoiser` holds only `history_len = 5` floats of state and mirrors
+`DataCleaningEnvironment._apply_action` exactly. Re-deriving the action formulas
+independently here is the standard way a deployed filter silently drifts away
+from the one that was trained and evaluated, so the two are kept aligned
+deliberately and the unit tests assert they agree.
+
+### Latency
+
+The bridge prints its own mean and p95 latency per run. On the development host
+(x86 CPU, no GPU needed) a single decision is a forward pass through an
+11,206-parameter MLP over a 19-dimensional input, and measures well under a
+millisecond — the run above measured 0.25 ms mean and 0.36 ms p95 over 14
+readings.
+
+**This is a host-CPU measurement and nothing more.** An ESP32-class figure would
+require flashing the board and timing it there, which has not been done. The
+architecture is small enough that on-device inference is plausible — $O(1)$
+memory, five retained floats, no lookahead, no dataset-wide normaliser — but
+"plausible" is the claim, not "measured".
 
 ---
 
@@ -254,4 +248,13 @@ When demonstrating the project to your professor or competition judges:
 2. **Induce Fault 1 (Electrical / Spike Noise):** Flick or tap the analog wire / introduce an instant spark or flame near the MQ-135 $\to$ the terminal will show a sudden spike, the RL agent will immediately trigger `remove_outlier`, and the signal will be clipped to the rolling median.
 3. **Induce Fault 2 (Transmission Dropout):** Unplug the data wire momentarily $\to$ the terminal receives `None`/`-200`, the RL agent will trigger `fill_missing`, maintaining smooth telemetry continuity without crashing.
 4. **Induce Fault 3 (Drift):** Breathe gently on the MQ-135 to elevate the baseline $\to$ observe the agent select `fix_type` (recalibration), gradually guiding the reading back to nominal levels.
-5. **Show Comparison:** Display the `plots/baseline_vs_rl_comparison.png` and `plots/denoising_before_after.png` figures on your laptop screen to show that the learned RL policy achieves a **$19.9\%$ error reduction on spikes and $100\%$ on dropouts**, vastly outperforming static rule heuristics.
+5. **Show Comparison:** Display `plots/baseline_vs_rl_comparison.png` and `plots/denoising_before_after.png`. Quote the measured numbers from `docs/PROFESSOR_BRIEFING.md` — the spike family is where the learned policy has a clear advantage over the rule filter, the drift family is where neither method does much, and the dropout and duplicate families have so little raw error that there is nothing to win. Do not claim a headline figure that the benchmark did not produce; the table in the briefing is regenerated by `python -m backend.ml.evaluate_benchmarks` and is the authority.
+
+### A caution for the demo
+
+Points 2 to 4 above describe the response the policy is *intended* to produce.
+They have never been observed on hardware, and the policy was trained on the UCI
+air-quality channel rather than on MQ-135 output, whose scale and noise
+characteristics differ. The encoder is scale-relative, which is the reason to
+expect some transfer, but transfer to this sensor is untested. Rehearse the demo
+in replay mode first and describe the hardware portion as a prototype.
