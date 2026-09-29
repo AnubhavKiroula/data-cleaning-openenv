@@ -277,5 +277,79 @@
         }
       }
     }
+  },
+  "per_window_outcomes": {
+    "by_family": {
+      "spike": {
+        "episodes": 150,
+        "improved": 94,
+        "unchanged": 30,
+        "damaged": 26,
+        "improved_pct": 62.66666666666667,
+        "unchanged_pct": 20.0,
+        "damaged_pct": 17.333333333333336,
+        "median_delta": -0.05900878306728573,
+        "mean_delta": -0.07087354049299116,
+        "worst_delta": 0.09576193333101429
+      },
+      "drift": {
+        "episodes": 150,
+        "improved": 49,
+        "unchanged": 70,
+        "damaged": 31,
+        "improved_pct": 32.666666666666664,
+        "unchanged_pct": 46.666666666666664,
+        "damaged_pct": 20.666666666666668,
+        "median_delta": 0.0,
+        "mean_delta": -0.014222716873274109,
+        "worst_delta": 0.10977777777777778
+      },
+      "dropout": {
+        "episodes": 150,
+        "improved": 15,
+        "unchanged": 30,
+        "damaged": 105,
+        "improved_pct": 10.0,
+        "unchanged_pct": 20.0,
+        "damaged_pct": 70.0,
+        "median_delta": 0.014458333333333327,
+        "mean_delta": 0.03183131654106281,
+        "worst_delta": 0.22466666666666668
+      },
+      "duplicate": {
+        "episodes": 150,
+        "improved": 1,
+        "unchanged": 91,
+        "damaged": 58,
+        "improved_pct": 0.6666666666666667,
+        "unchanged_pct": 60.66666666666667,
+        "damaged_pct": 38.666666666666664,
+        "median_delta": 0.0,
+        "mean_delta": 0.010256016793190709,
+        "worst_delta": 0.19347826086956518
+      },
+      "mixed": {
+        "episodes": 150,
+        "improved": 97,
+        "unchanged": 13,
+        "damaged": 40,
+        "improved_pct": 64.66666666666666,
+        "unchanged_pct": 8.666666666666668,
+        "damaged_pct": 26.666666666666668,
+        "median_delta": -0.021485062765353738,
+        "mean_delta": -0.040607634190361175,
+        "worst_delta": 0.52921135569043
+      }
+    },
+    "overall": {
+      "episodes": 750,
+      "improved_pct": 34.13333333333333,
+      "unchanged_pct": 31.2,
+      "damaged_pct": 34.66666666666667,
+      "median_delta": 0.0,
+      "mean_delta": -0.016723311644474586,
+      "worst_delta": 0.52921135569043
+    },
+    "seeds": 5
   }
 }

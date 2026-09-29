@@ -232,6 +232,115 @@ def run_benchmark(
     return {"df": df, "detail": detail, "aggregate": aggregate}
 
 
+def per_window_outcomes(
+    seed_models: Optional[List[str]] = None,
+    num_windows: int = 30,
+    window_size: int = 24,
+    seed_base: int = 2026,
+    split: str = "test",
+    device: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Count how often the policy helps, does nothing, and *hurts* per window.
+
+    The aggregate MAE in :func:`run_benchmark` is a mean, and a mean hides its
+    own variance. This asks the blunter question an examiner will ask: on any
+    given 24-hour window, is the agent more likely to improve the stream or
+    damage it? The answer differs sharply by fault family, and on two families
+    it is "damage", which the aggregate alone does not make obvious.
+
+    Returns per-family counts plus the median and worst per-window change in
+    MAE, where negative means the agent reduced error.
+    """
+    import torch
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if seed_models is None:
+        seed_models = sorted(glob.glob(SEED_GLOB)) or [DEFAULT_MODEL]
+
+    agents = []
+    for path in seed_models:
+        agent = DQNAgent(device=device)
+        agent.load_model(path)
+        agents.append(agent)
+
+    env = DataCleaningEnvironment(history_len=5)
+    by_family: Dict[str, Any] = {}
+    all_deltas: List[float] = []
+
+    for ctype in CORRUPTION_TYPES:
+        deltas = []
+        for agent in agents:
+            with agent.eval_mode():
+                for i in range(num_windows):
+                    kwargs = {
+                        "task_name": "iot_stream",
+                        "window_size": window_size,
+                        "split": split,
+                        "corruption_type": ctype,
+                        "seed": seed_base + i * 43,
+                    }
+                    preds = _rl_predict(agent, env, kwargs)
+                    m = evaluate_window([dict(r) for r in env.dataset], preds)
+                    deltas.append(m["mae"] - m["raw_mae"])
+
+        d = np.asarray(deltas)
+        all_deltas.extend(deltas)
+        n = len(d)
+        by_family[ctype] = {
+            "episodes": n,
+            "improved": int((d < -1e-9).sum()),
+            "unchanged": int((np.abs(d) <= 1e-9).sum()),
+            "damaged": int((d > 1e-9).sum()),
+            "improved_pct": float(100.0 * (d < -1e-9).mean()),
+            "unchanged_pct": float(100.0 * (np.abs(d) <= 1e-9).mean()),
+            "damaged_pct": float(100.0 * (d > 1e-9).mean()),
+            "median_delta": float(np.median(d)),
+            "mean_delta": float(d.mean()),
+            "worst_delta": float(d.max()),
+        }
+
+    d = np.asarray(all_deltas)
+    overall = {
+        "episodes": len(d),
+        "improved_pct": float(100.0 * (d < -1e-9).mean()),
+        "unchanged_pct": float(100.0 * (np.abs(d) <= 1e-9).mean()),
+        "damaged_pct": float(100.0 * (d > 1e-9).mean()),
+        "median_delta": float(np.median(d)),
+        "mean_delta": float(d.mean()),
+        "worst_delta": float(d.max()),
+    }
+    return {"by_family": by_family, "overall": overall, "seeds": len(agents)}
+
+
+def print_per_window_outcomes(res: Dict[str, Any]) -> None:
+    """Format :func:`per_window_outcomes` as a table."""
+    print(
+        f"{'family':>10} {'improved':>12} {'unchanged':>12} {'damaged':>12} "
+        f"{'median d':>10} {'worst d':>10}"
+    )
+    print("-" * 70)
+    for fam, v in res["by_family"].items():
+        print(
+            f"{fam:>10} {v['improved']:>4} ({v['improved_pct']:>3.0f}%) "
+            f"{v['unchanged']:>4} ({v['unchanged_pct']:>3.0f}%) "
+            f"{v['damaged']:>4} ({v['damaged_pct']:>3.0f}%) "
+            f"{v['median_delta']:>+10.4f} {v['worst_delta']:>+10.4f}"
+        )
+    o = res["overall"]
+    print("-" * 70)
+    print(
+        f"{'ALL':>10} {'':>5}({o['improved_pct']:>3.0f}%) {'':>5}"
+        f"({o['unchanged_pct']:>3.0f}%) {'':>5}({o['damaged_pct']:>3.0f}%) "
+        f"{o['median_delta']:>+10.4f} {o['worst_delta']:>+10.4f}"
+    )
+    print(
+        f"\n{o['episodes']} episodes over {res['seeds']} seed(s). "
+        f"Mean change in MAE {o['mean_delta']:+.4f} "
+        "(negative = the agent reduced error)."
+    )
+
+
 def plot_comparison(
     df: pd.DataFrame, save_path: str = "plots/baseline_vs_rl_comparison.png"
 ) -> str:
@@ -424,6 +533,14 @@ def main() -> None:
     print("     calibrated gate essentially never fires. That is the measured outcome")
     print("     of the training-split grid search, not a missing run.")
 
+    print("\n" + "=" * 100)
+    print("PER-WINDOW OUTCOMES: how often does the policy help, and how often hurt?")
+    print("=" * 100)
+    pw = per_window_outcomes(
+        num_windows=args.num_windows, window_size=args.window_size, split=args.split
+    )
+    print_per_window_outcomes(pw)
+
     plot_path = plot_comparison(df)
     signal_path = plot_signal_example(model_path=args.model)
     print(f"\nPlots written: {plot_path}, {signal_path}")
@@ -435,6 +552,7 @@ def main() -> None:
                 "aggregate": agg,
                 "table": df.to_dict(orient="records"),
                 "detail": res["detail"],
+                "per_window_outcomes": pw,
             },
             fh,
             indent=2,
