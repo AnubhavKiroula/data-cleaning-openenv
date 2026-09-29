@@ -19,7 +19,7 @@ class DataCleaningEnv:
 
     Usage:
         env = DataCleaningEnv(base_url="https://01ammu-data-cleaning-openenv.hf.space")
-        obs = env.reset(task_name="easy")
+        obs = env.reset(task_name="iot_stream")
         result = env.step(action_type="fill_missing", column="age", value=30)
     """
 
@@ -31,7 +31,7 @@ class DataCleaningEnv:
     #  Core OpenEnv interface                                              #
     # ------------------------------------------------------------------ #
 
-    def reset(self, task_name: str = "easy") -> StepResult:
+    def reset(self, task_name: str = "iot_stream") -> StepResult:
         """Start a new episode. Returns initial observation."""
         payload = self._reset_payload(task_name)
         response = self._session.post(f"{self.base_url}/reset", json=payload)
