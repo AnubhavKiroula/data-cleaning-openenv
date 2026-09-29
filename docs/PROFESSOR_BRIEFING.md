@@ -259,6 +259,35 @@ loss. The percentages look dramatic only because the denominator is near zero �
 in absolute terms these are +0.032 and +0.010 on a signal whose window standard
 deviation is around 1.1. The absolute columns are the honest ones here.
 
+A mean hides its own variance, so here is the blunter question: on any given
+24-hour window, is the policy more likely to improve the stream or damage it?
+Over 750 episodes (30 windows × 5 seeds × 5 families), where Δ is the change in
+window MAE and negative means the agent reduced error:
+
+| Fault family | Improved | Unchanged | **Damaged** | Median Δ | Worst Δ |
+|---|---:|---:|---:|---:|---:|
+| Spike | **63%** | 20% | 17% | −0.0590 | +0.0958 |
+| Drift | 33% | 47% | 21% | 0.0000 | +0.1098 |
+| Dropout | 10% | 20% | **70%** | +0.0145 | +0.2247 |
+| Duplicate | 1% | 61% | **39%** | 0.0000 | +0.1935 |
+| Mixed | **65%** | 9% | 27% | −0.0215 | +0.5292 |
+| **All** | 34% | 31% | 35% | 0.0000 | +0.5292 |
+
+Mean Δ across all 750 episodes is −0.0167, so the policy is net beneficial —
+but only 34% of individual windows improve and 35% are damaged. The aggregate
+gain is carried by a minority of windows containing large transients, where the
+absolute saving is big, against a majority of small losses. On the two families
+worth intervening in, spike and mixed, the policy improves roughly two windows
+in three. On dropout it damages seven in ten.
+
+This has a practical consequence for demonstration: **a single window chosen at
+random is close to a coin flip and evidences nothing.** `scripts/demo_window.py`
+therefore defaults to the spike window whose error reduction sits nearest the
+family median (+14.4% against a median of +16.0%), prints these population
+statistics alongside it, and exposes `--pick` to show the full candidate
+distribution. Regenerate the table with
+`python -m backend.ml.evaluate_benchmarks --num-windows 30`.
+
 **(b) Validation did not predict test.** Validation relative-MAE averaged
 **0.9725 ± 0.0104** across the five seeds (range 0.9575–0.9858) — a ~3%
 improvement on inaction. Held-out test relative-MAE averaged about **1.01**
@@ -400,7 +429,27 @@ numbers were not produced by a valid experiment. Auditing the pipeline found:
    the first 680 of 7,485 training hours because the window index was a function
    of the epoch number.
 
-All five are fixed, each has a named regression test, and the tests assert the
+A sixth defect was introduced *during* the repair and found afterwards, which is
+worth recording because it is the same failure mode in a new place. The
+best-checkpoint save in `train_dqn.py` sat outside the `if save:` guard, so every
+run of the test suite — `train(epochs=12, save=False)` with the default empty
+checkpoint suffix — silently overwrote `models/dqn_iot_stream_best.pt` with a
+12-epoch CPU model. The published headline checkpoint was therefore a test
+artifact, and it scored 0.2763 MAE on the spike family against a do-nothing
+0.2317: **worse than inaction.** The test suite was corrupting the artifact the
+project reports.
+
+It was caught by a consistency check, not by inspection: the demo script's
+per-window statistics for the spike family (8 of 30 windows improved)
+contradicted the 5-seed analysis (63% improved), and the two figures could not
+both be right. The results table was unaffected, because it aggregates the five
+per-seed checkpoints rather than the headline copy, but
+`plots/denoising_before_after.png` and the notebook's signal plot had been
+generated with the bad model and were regenerated. The best weights are now held
+in memory and written only when `save=True`, and two regression tests assert
+that `train(save=False)` writes nothing at all.
+
+All six are fixed, each has a named regression test, and the tests assert the
 specific failure rather than the general area. The current table is worse than
 the fabricated one on several rows. It is also real.
 

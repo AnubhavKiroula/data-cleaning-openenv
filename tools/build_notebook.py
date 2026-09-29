@@ -732,6 +732,38 @@ plt.show()
 print("Saved plots/baseline_vs_rl_comparison.png")
 """))
 
+    cells.append(md(r"""
+### Per-window outcomes: a mean hides its own variance
+
+The table above reports means. The blunter question, and the one an examiner
+will ask: on any given 24-hour window, is the policy more likely to improve the
+stream or damage it?
+"""))
+
+    cells.append(code(r"""
+from backend.ml.evaluate_benchmarks import (
+    per_window_outcomes,
+    print_per_window_outcomes,
+)
+
+pw = per_window_outcomes(num_windows=NUM_WINDOWS, split="test")
+print_per_window_outcomes(pw)
+
+o = pw["overall"]
+print()
+print("Read this together with the table above. The policy is net beneficial")
+print(f"(mean change in MAE {o['mean_delta']:+.4f}), but only "
+      f"{o['improved_pct']:.0f}% of individual windows")
+print(f"improve and {o['damaged_pct']:.0f}% are damaged. The aggregate gain is "
+      "carried by a minority of")
+print("windows holding large transients, where the absolute saving is big,")
+print("against a majority of small losses on windows that needed nothing.")
+print()
+print("Practical consequence: a single window chosen at random is close to a")
+print("coin flip and evidences nothing. scripts/demo_window.py defaults to a")
+print("median-representative window and prints these statistics beside it.")
+"""))
+
     # -------------------------------------------- 8. Signal visualisation
     cells.append(md(r"""
 ---
