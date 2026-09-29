@@ -1,5 +1,19 @@
 # RL-Cleanse: Research Pivot, Repository Refactoring, & CI/CD Master Blueprint
 
+> ## Status: this is the original design blueprint, not a results document
+>
+> This file records the *plan* as written before implementation. It is kept for
+> provenance. Two kinds of content in it are now superseded:
+>
+> * **The benchmark table in section 6.2 was never produced by a valid
+>   experiment.** It is preserved below, struck through, with the measured
+>   numbers beside it. `docs/PROFESSOR_BRIEFING.md` section 4 is the
+>   authoritative results document, and `python -m backend.ml.evaluate_benchmarks`
+>   regenerates it from scratch.
+> * **Several specifications were mis-calibrated and were changed deliberately.**
+>   Each change is listed in "Implementation deviations" at the end of this file,
+>   with the reason. Nothing was changed silently.
+
 **Project Name:** RL-Cleanse  
 **Competition Track:** technIEEEks'26 — Embedded Systems & IoT Track  
 **Submission Deadline:** October 5, 2026  
@@ -24,7 +38,15 @@
 ### 1.3 Academic Novelty Claim
 1. **Online/Streaming Constraint:** Offline ML approaches (matrix completion, autoencoders, batch KNN) require buffering future data ($t+1 \dots T$). RL-Cleanse operates with $O(1)$ streaming latency at step $t$ using rolling historical buffers ($N=5$).
 2. **Magnitude-Aware Reward Function:** Unlike tabular data cleaning agents that receive flat rewards per action, RL-Cleanse scales rewards dynamically based on instantaneous error reduction ($|y_{\text{corrupt}} - y^*| - |y_{\text{clean}} - y^*|$), preventing signal attenuation and penalizing false positives.
-3. **Robustness to Sensor Drift:** Classical industrial filters (Z-score thresholding + carry-forward imputation) fail on gradual calibration drift ($0\%$ error reduction, degrading to negative scores), whereas the RL agent successfully learns drift trajectory dynamics from rate-of-change ($\Delta y_t$) and rolling baseline features.
+3. ~~**Robustness to Sensor Drift:** ... the RL agent successfully learns drift trajectory dynamics ...~~
+   **NOT SUPPORTED.** Measurement gives the agent a 5.2% drift-family error
+   reduction — real but modest, and far from "learns drift trajectory dynamics".
+   The half of the claim about classical filters does hold: a median/MAD test
+   cannot detect a ramp, because the reading and its own neighbourhood move
+   together. The supported novelty claim is different and is stated in
+   `docs/PROFESSOR_BRIEFING.md` section 1: a *soft* correction beats a hard
+   threshold on transients, because under a causal constraint a spike and a step
+   change are not distinguishable at time $t$ at all.
 
 ---
 
@@ -220,15 +242,52 @@ jobs:
 | **Target Update Frequency** | Every 5 epochs | Stabilizes Bellman temporal difference targets. |
 | **Replay Buffer Capacity** | 10,000 | Stores transitions across multiple diverse window permutations. |
 
-### 6.2 Empirical Benchmark Summary Table (for Research Paper)
+### 6.2 Benchmark results
 
-| Telemetry Corruption | Raw MAE | Rule-Based Baseline MAE | RL-Cleanse DQN MAE | Baseline Score | RL-Cleanse Score | Error Reduction (%) |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Electrical Spike** | 0.1951 | 0.5773 | **0.1562** | 0.306 | **0.753** | **+19.9%** |
-| **Calibration Drift** | 0.1323 | 0.6550 | **0.1323** | 0.008 | **0.500** | **+0.0%** (Baseline degraded -395%) |
-| **Transmission Dropout** | 0.0000 | 0.6013 | **0.0000** | 0.273 | **0.683** | **100% Imputation** |
-| **Duplicate Packet** | 0.0143 | 0.5489 | **0.0143** | 0.211 | **0.733** | **Clean Pass** |
-| **Mixed Real-World** | 0.2650 | 0.6950 | **0.2379** | 0.262 | **0.527** | **+10.2%** |
+> **The table originally in this section was invalid and has been replaced.**
+> It reported +19.9% error reduction on spikes, "100% imputation" on dropouts,
+> and baseline MAE of 0.55–0.69. Audit found that the evaluated agent selected
+> an unimplemented action on 110 of 120 steps and therefore never modified the
+> signal; that un-imputed dropouts were filtered out of the MAE average, so
+> emitting nothing scored a perfect 0.0000; and that the baseline fed its own
+> replacements back into its history buffer, scoring 0.208 MAE on *perfectly
+> clean* input. `docs/PROFESSOR_BRIEFING.md` section 7 documents all five root
+> causes and the regression tests that now guard them.
+
+**Measured results.** 30 held-out test windows of 24 hours per fault family,
+identical window seeds for every method, 5 independently trained seeds.
+Regenerate with `python -m backend.ml.evaluate_benchmarks --num-windows 30`.
+
+| Fault family | Do-nothing MAE | Rule(cal) MAE | Rule(txt) MAE | RL MAE | RL std | RL rel | RL reduction |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Electrical spike | 0.2317 | 0.2317 | 0.4795 | **0.1608** | 0.0037 | **0.694** | **+30.6%** |
+| Calibration drift | 0.2743 | 0.2743 | 0.5351 | **0.2600** | 0.0015 | **0.948** | +5.2% |
+| Transmission dropout | **0.0627** | 0.0627 | 0.2861 | 0.0946 | 0.0018 | 1.507 | −50.7% |
+| Duplicate packet | **0.0299** | 0.0299 | 0.3351 | 0.0401 | 0.0036 | 1.344 | −34.4% |
+| Mixed real-world | 0.4863 | 0.4863 | 0.7697 | **0.4457** | 0.0126 | **0.916** | +8.4% |
+| **Mean** | **0.2170** | 0.2170 | 0.4811 | **0.2002** | — | 1.082 | — |
+
+`Rule(cal)` is grid-searched on the training split; `Rule(txt)` is the
+conventional Hampel cut-off z=4. `rel` is method MAE divided by that family's
+own do-nothing MAE, so 1.000 means no improvement.
+
+**Headline.** RL-Cleanse beats both rule configurations on mean absolute MAE
+(0.2002 vs 0.2170 and 0.4811), and neither rule configuration improves on doing
+nothing at all. It does **not** beat inaction uniformly: it over-corrects the two
+families whose raw error was already near zero, so the equal-weight relative
+aggregate is 1.082. Both aggregates are reported everywhere.
+
+**Three negative findings that the original plan did not anticipate**, detailed
+in the briefing section 4.3:
+
+1. No finite rejection threshold beats pass-through on this channel. The
+   training-split sweep is monotone to z → ∞.
+2. Validation did not predict test: 0.9725 ± 0.0104 on validation, ~1.01 on
+   test.
+3. The specified 2.5–4.0σ spike amplitude lands inside the channel's own
+   innovation envelope (99th-percentile robust z of genuine innovations = 8.8),
+   so the faults are inherently hard to separate from the signal. The specified
+   amplitudes were kept rather than raised.
 
 ---
 
@@ -252,26 +311,42 @@ The notebook is the primary graded deliverable. It must execute cleanly top-to-b
 
 Full specification is maintained in `docs/HARDWARE_SETUP.md`:
 - **Hardware Requisition:** ESP32 NodeMCU, MQ-135 Gas Sensor, DHT22 Temperature/Humidity Sensor, Breadboard, Jumper Wires, Micro-USB cable.
-- **Simulation:** Pre-wired and verified in Wokwi and Tinkercad Circuits.
+- **Simulation:** *Planned.* No Wokwi or Tinkercad run is recorded in this repository, so no simulation result is claimed. See `docs/HARDWARE_SETUP.md` section 0 for the per-component status table.
 - **Firmware:** ESP32 C++ sketch streaming formatted JSON telemetry (`{"timestep": t, "sensor": "CO(GT)", "value": 2.45}`) over UART Serial at 115200 baud.
-- **Laptop Real-Time Bridge:** Python script (`scripts/live_iot_inference.py`) reading live serial packets, running single-step DQN inference in $<2\text{ms}$, and printing live cleaned telemetry.
+- **Laptop Real-Time Bridge:** `scripts/live_iot_inference.py` — **implemented, replay-tested only.** Runs end to end from the UCI test split via `--replay`; its serial path has never been connected to a board. Host-CPU inference measures 0.25 ms mean / 0.36 ms p95. No ESP32 latency figure is claimed.
 
 ---
 
-## 9. Direct Action Plan for Claude Code Execution
+## 9. Implementation deviations from this blueprint
 
-If you are continuing this work using **Claude Code**, use the following prompt and task sequence:
+Every change from the specification above, with its reason. Nothing here was
+changed to improve a metric.
 
-### Prompt to Copy-Paste into Claude Code:
-```markdown
-I am working on RL-Cleanse for the technIEEEks'26 competition (deadline Oct 5). 
-We have already pivoted from static tabular data cleaning to sequential IoT sensor stream denoising using the UCI Air Quality dataset.
-Read `docs/RESEARCH_PIVOT_MASTER_PLAN.md` carefully as your master specification.
+| # | Specified | Implemented | Why |
+|---|---|---|---|
+| 1 | Epsilon decay 0.95 per epoch | Decay derived from run length to span 70% of training, preserving the 1.0 → 0.02 endpoints | 0.95 per epoch reaches the floor at epoch 76, so an 800-epoch run would explore for its first 10% only. The literal value is still available as an explicit override. |
+| 2 | State space $\mathbb{R}^{50}$ | $\mathbb{R}^{19}$ | The original encoder produced 38 features zero-padded to 50. The new layout is explicit, fully documented, and every dimension carries signal. A 21-dimensional variant adding absolute-magnitude features was tested and **rejected on validation** (0.997 vs 0.932). |
+| 3 | Action dim 7 | 6 | There are six actions. The seventh output head was unreachable. |
+| 4 | Train/test split only | Train / validation / test | The original loop selected checkpoints by test-split MAE, which is model selection on held-out data. Validation is carved from the end of the training region; the train/test boundary is unchanged at hour 7,485. |
+| 5 | Plain DQN | Double DQN | Diagnosed, not preferred a priori: plain DQN's overestimation bias showed up behaviourally as the policy over-correcting clean streams. |
+| 6 | Reward gated on `row["fault_type"]` | Reward is a function of error reduction only | Gating on the generator's annotation rewards matching a label rather than improving the signal, and produces a policy that cannot transfer. The reward formula of §2.3 is unchanged; what changed is that it is now the *live* reward — previously `RewardShaper` implemented it correctly but the environment used a different ad-hoc function and the shaper was dead code. |
+| 7 | Rule baseline: rolling z-score on the reading | Robust gating of the one-step forecast **innovation**, hyperparameters grid-searched on the training split | A median/MAD test on the raw level assumes a locally stationary mean; this channel's diurnal cycle breaks that, and genuine rush-hour peaks were being clipped. Measured at 0.240 MAE on uncorrupted input before the fix, 0.208 for the revision before that. |
+| 8 | MAE over available values | MAE over all timesteps, with un-emitted values carry-forward filled and counted | Filtering out un-imputed dropouts let a policy that emitted nothing score 0.0000. Interpolated-reference timesteps are excluded instead, which is the exclusion that is actually justified. |
+| 9 | Window index from the epoch seed | Window drawn from a dedicated RNG over the whole split | `start_idx = (epoch * 17) % max_start` confined 40 epochs to the first 680 of 7,485 training hours. |
+| 10 | Legacy tabular tasks (`easy`/`medium`/`hard`) retained | Removed | They belonged to the pre-pivot static tabular cleaning application. |
+| 11 | Single training run | Five seeds, aggregated | Single-run validation relative-MAE spans 0.93–1.08 on this task, so a single-seed number describes the seed rather than the method. |
 
-Your task is to:
-1. Prune legacy full-stack files (frontend/, redis/, infra/, docker files, alembic) that cause CI issues and bloat the repo.
-2. Replace `.github/workflows/ci.yml` with the streamlined ML test workflow defined in Section 5.2.
-3. Write comprehensive unit tests in tests/ (test_data_loader.py, test_iot_env.py, test_dqn_training.py) ensuring 100% test pass rate.
-4. Verify that `RL-Cleanse_demo.ipynb` executes cleanly from top to bottom without errors via `jupyter nbconvert --execute`.
-5. Maintain frequent, clean Git commits on branch `feat/iot-stream-denoising` with conventional commit tags.
-```
+### Specifications kept deliberately, despite being unfavourable
+
+* **Spike amplitude 2.5–4.0σ of the window standard deviation.** Measurement
+  shows this lands inside the channel's own innovation envelope, which caps what
+  any causal method can achieve. Raising it would have improved every headline
+  number. It was not raised; the limitation is reported instead.
+* **Reward skip tolerance of 0.2 absolute signal units.** This leaves the agent
+  no incentive to improve errors already below 0.2, which caps achievable
+  reduction on the low-amplitude fault families — an oracle-greedy policy under
+  this reward reaches only +9.1% on dropout. The specified constant was kept and
+  the consequence documented.
+* **Episode window k = 24 and history N = 5.** Unchanged.
+* **Batch 64, lr 3e-4, gamma 0.99, target update every 5 epochs, replay 10,000.**
+  Unchanged.
