@@ -109,7 +109,7 @@ The base repository currently contains significant full-stack scaffolding that i
 ### 4.1 What to Remove / Deprecate
 
 > **Completed.** The removal was carried out across commits a118829..bd8a71a,
-> taking the repository from 312 tracked files to 55. Generated artifacts and
+> taking the repository from 312 tracked files to 50. Generated artifacts and
 > local data (`graphify-out/`, `data/uploads/`, pre-pivot checkpoints, reports
 > and plots, the SQLite database) were untracked with `git rm --cached` rather
 > than deleted from disk. One item turned out to matter more than bloat: the

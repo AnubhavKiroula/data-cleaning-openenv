@@ -156,7 +156,7 @@ The legacy full-stack application this project was pivoted from has been
 removed: the React frontend, the FastAPI/Celery/Alembic backend, Redis, the
 Kubernetes and Docker configuration, the Render and HuggingFace deployment
 workflows, the pre-pivot multi-agent ML modules, and their tests and documents.
-The repository went from 312 tracked files to 55.
+The repository went from 312 tracked files to 50.
 
 What remains is the research pipeline, its three documents, the graded notebook
 and a single CI workflow.
