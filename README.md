@@ -152,12 +152,17 @@ per-component table of what is implemented, designed, simulated or planned.
 
 ## Status
 
-The repository still contains the legacy full-stack application it was pivoted
-from (`frontend/`, `redis/`, `infra/`, the FastAPI/Celery/Alembic backend, Docker
-and Render configuration, and the legacy `tests/test_api.py`,
-`test_celery.py`, `test_database.py`, `test_monitoring.py`, `test_agents.py`,
-`test_dqn.py`). None of it is imported by the research pipeline, and CI does not
-run it. Removal is pending.
+The legacy full-stack application this project was pivoted from has been
+removed: the React frontend, the FastAPI/Celery/Alembic backend, Redis, the
+Kubernetes and Docker configuration, the Render and HuggingFace deployment
+workflows, the pre-pivot multi-agent ML modules, and their tests and documents.
+The repository went from 312 tracked files to 55.
+
+What remains is the research pipeline, its three documents, the graded notebook
+and a single CI workflow.
+
+**No physical hardware has been tested.** `docs/HARDWARE_SETUP.md` section 0 is
+a per-component table of what is implemented, designed, simulated or planned.
 
 ## License
 

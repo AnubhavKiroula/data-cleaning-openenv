@@ -52,11 +52,14 @@ Repository = "https://github.com/AnubhavKiroula/data-cleaning-openenv"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["envs*", "backend.ml*", "data*"]
+include = ["envs*", "backend*", "data*"]
+# `data` and `envs` carry no __init__.py, so the default find_packages would
+# skip them and `pip install -e .` would leave the loader and the environment
+# unimportable. CI masks this with PYTHONPATH; this makes the install correct
+# on its own.
+namespaces = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Keep the research suite green regardless of the legacy test files still
-# present in tests/; those target the removed web stack.
 addopts = "-q"
 filterwarnings = ["ignore::DeprecationWarning"]
