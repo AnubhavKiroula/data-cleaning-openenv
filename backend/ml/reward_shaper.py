@@ -1,422 +1,137 @@
 """
-Reward Shaper for multi-agent data cleaning system.
+Magnitude-aware reward shaping for streaming sensor denoising.
 
-This module implements sophisticated reward calculation beyond simple
-bonuses, incorporating progress, consistency, and performance metrics.
+This implements the reward of ``docs/RESEARCH_PIVOT_MASTER_PLAN.md`` section 2.3:
+
+    R_t = R_base + min(0.45, 0.2 * (e_raw - e_clean))        if error decreased
+          -0.15  - min(0.35, 0.2 * (e_clean - e_raw))        if error increased
+          +0.15                                               if skip and e_raw < 0.2
+
+where ``e_raw = |y_t - y*_t|`` is the error of leaving the reading alone and
+``e_clean = |y_clean - y*_t|`` is the error after the action.
+
+Two properties matter for the research claim:
+
+* The reward is **outcome-based**. It is a function of how much error the action
+  actually removed, never of the generator's fault label. An earlier revision
+  gated each action's reward on ``row["fault_type"]``, which rewarded matching
+  an oracle annotation rather than improving the signal, and produced a policy
+  that had learned nothing transferable.
+* The reward is **bounded**. Both magnitude terms are clipped, so a single
+  extreme spike cannot dominate an episode's return and destabilise the
+  Bellman targets.
+
+The reward uses ground truth and is therefore a *training-time* signal only. It
+is not available at deployment, and nothing in it reaches the agent's
+observation — see ``DataCleaningEnvironment._make_observation``.
 """
 
-from typing import Dict, Any
 import logging
 from collections import defaultdict
+from typing import Any, Dict, Optional
+
+# Section 2.3 constants.
+SKIP_TOLERANCE = 0.2
+SKIP_REWARD = 0.15
+FALSE_CORRECTION_PENALTY = -0.15
+MAGNITUDE_SCALE = 0.2
+MAX_IMPROVEMENT_BONUS = 0.45
+MAX_DEGRADATION_PENALTY = 0.35
+REWARD_CLIP = 1.0
 
 
 class RewardShaper:
-    """
-    Calculates sophisticated rewards for agent actions.
+    """Computes the magnitude-aware streaming denoising reward."""
 
-    Logic:
-    - Base reward: action-specific (+0.3, etc)
-    - Progress bonus: +0.05 per 20% episode completion
-    - Consistency bonus: +0.1 if this action type fixed similar issues before
-    - Penalty: -0.2 if action contradicts previous decisions
-    - Perfect run bonus: +0.5 if episode completes with score >= 0.9
-    """
+    #: Per-action base reward, paid only when the action reduced the error.
+    base_rewards = {
+        "fill_missing": 0.30,
+        "remove_outlier": 0.30,
+        "remove_duplicate": 0.35,
+        "fix_type": 0.25,
+        "fix_category": 0.25,
+        "skip": -0.15,
+    }
 
     def __init__(self):
-        """Initialize the reward shaper."""
         self.logger = logging.getLogger("RewardShaper")
-
-        # Base rewards for different action types
-        self.base_rewards = {
-            "fill_missing": 0.3,
-            "remove_duplicate": 0.35,
-            "remove_outlier": 0.3,
-            "fix_category": 0.3,
-            "fix_type": 0.25,
-            "fix_formatting": 0.25,
-            "skip": -0.15,  # Penalty for not acting
-        }
-
-        # Track action history for consistency bonuses/penalties
         self.action_history = []
-        self.action_success_rates = defaultdict(list)
-        self.episode_progress = 0.0
-        self.total_steps_estimate = 50  # Default estimate
+        self.reward_history = []
+        self.action_rewards = defaultdict(list)
 
-        # Track issue resolution patterns
-        self.issue_action_mapping = defaultdict(list)
-
-    def reset_episode(self, total_steps_estimate: int = 50) -> None:
-        """
-        Reset reward shaper for new episode.
-
-        Args:
-            total_steps_estimate: Estimated total steps for progress calculation
-        """
+    def reset_episode(self, total_steps_estimate: int = 24) -> None:
+        """Clear per-episode bookkeeping."""
         self.action_history = []
-        self.episode_progress = 0.0
+        self.reward_history = []
         self.total_steps_estimate = total_steps_estimate
 
-        self.logger.info("RewardShaper reset for new episode")
-
-    def calculate_reward(
+    def compute_stream_reward(
         self,
-        action: Dict[str, Any],
-        observation: Dict[str, Any],
-        episode_state: Dict[str, Any],
+        action_type: str,
+        error_raw: float,
+        error_cleaned: float,
+        record: bool = True,
     ) -> float:
         """
-        Calculate sophisticated reward for an action.
+        Score one denoising decision.
 
         Args:
-            action: Action taken by agent
-            observation: Current environment observation
-            episode_state: Current episode state information
+            action_type: The action taken, one of :attr:`base_rewards`.
+            error_raw: ``|y_t - y*_t|``, the error of doing nothing. For a
+                dropout this is the error of the carry-forward value, so
+                imputation is rewarded exactly for beating carry-forward.
+            error_cleaned: ``|y_clean - y*_t|`` after applying the action.
+            record: Whether to append to the episode's reward statistics.
 
         Returns:
-            Calculated reward value
+            The clipped reward.
         """
-        action_type = action.get("action_type", "skip")
+        if action_type == "skip":
+            reward = SKIP_REWARD if error_raw < SKIP_TOLERANCE else FALSE_CORRECTION_PENALTY
+        else:
+            delta = error_raw - error_cleaned
+            if delta > 1e-9:
+                base = self.base_rewards.get(action_type, 0.0)
+                reward = base + min(MAX_IMPROVEMENT_BONUS, MAGNITUDE_SCALE * delta)
+            else:
+                # No improvement, or an actively harmful correction.
+                reward = FALSE_CORRECTION_PENALTY - min(
+                    MAX_DEGRADATION_PENALTY, MAGNITUDE_SCALE * (-delta)
+                )
 
-        # 1. Base reward
-        base_reward = self._get_base_reward(action_type)
+        reward = float(max(-REWARD_CLIP, min(REWARD_CLIP, reward)))
 
-        # 2. Progress bonus
-        progress_bonus = self._calculate_progress_bonus(episode_state)
+        if record:
+            self.action_history.append(action_type)
+            self.reward_history.append(reward)
+            self.action_rewards[action_type].append(reward)
 
-        # 3. Consistency bonus
-        consistency_bonus = self._calculate_consistency_bonus(action, observation)
-
-        # 4. Contradiction penalty
-        contradiction_penalty = self._calculate_contradiction_penalty(
-            action, observation
-        )
-
-        # 5. Issue-specific adjustments
-        issue_adjustment = self._calculate_issue_adjustment(action, observation)
-
-        # 6. Skip action bonus (for not breaking data)
-        skip_bonus = self._calculate_skip_bonus(action, observation)
-
-        # 7. Magnitude-aware reward for IoT sensor stream denoising
-        magnitude_bonus = self._calculate_magnitude_reward(action, observation)
-
-        # Total reward
-        total_reward = (
-            base_reward
-            + progress_bonus
-            + consistency_bonus
-            + contradiction_penalty
-            + issue_adjustment
-            + skip_bonus
-            + magnitude_bonus
-        )
-
-        # Clamp reward to reasonable range
-        total_reward = max(-1.0, min(1.0, total_reward))
-
-
-        # Update tracking
-        self._update_tracking(action, observation, total_reward)
-
-        self.logger.debug(
-            f"Reward calculation for {action_type}: {total_reward:.3f} "
-            f"(base: {base_reward:.3f}, progress: {progress_bonus:.3f}, "
-            "consistency: "
-            f"{consistency_bonus:.3f}, contradiction: "
-            f"{contradiction_penalty:.3f})"
-        )
-
-        return total_reward
+        return round(reward, 4)
 
     def calculate_episode_completion_bonus(self, final_score: float) -> float:
-        """
-        Calculate bonus for episode completion.
-
-        Args:
-            final_score: Final episode score in [0, 1] range
-
-        Returns:
-            Completion bonus
-        """
+        """Terminal bonus for a well-denoised episode."""
         if final_score >= 0.9:
-            return 0.5  # Perfect run bonus
-        elif final_score >= 0.8:
-            return 0.3  # Excellent run bonus
-        elif final_score >= 0.7:
-            return 0.2  # Good run bonus
-        elif final_score >= 0.6:
-            return 0.1  # Acceptable run bonus
-        else:
-            return 0.0  # No bonus for poor performance
-
-    def _get_base_reward(self, action_type: str) -> float:
-        """Get base reward for action type."""
-        return self.base_rewards.get(action_type, 0.0)
-
-    def _calculate_progress_bonus(self, episode_state: Dict[str, Any]) -> float:
-        """
-        Calculate progress bonus based on episode completion.
-
-        Args:
-            episode_state: Current episode state
-
-        Returns:
-            Progress bonus
-        """
-        current_step = episode_state.get("step", 0)
-        total_steps = episode_state.get("total_steps", self.total_steps_estimate)
-
-        if total_steps <= 0:
-            return 0.0
-
-        # Calculate progress percentage
-        progress = current_step / total_steps
-
-        # Bonus for every 20% of episode completed
-        progress_segments = int(progress * 5)  # 5 segments of 20% each
-        return progress_segments * 0.05
-
-    def _calculate_consistency_bonus(
-        self, action: Dict[str, Any], observation: Dict[str, Any]
-    ) -> float:
-        """
-        Calculate consistency bonus for successful action patterns.
-
-        Args:
-            action: Current action
-            observation: Current observation
-
-        Returns:
-            Consistency bonus
-        """
-        action_type = action.get("action_type", "skip")
-        # Look for similar issue-action pairs in history
-        successful_patterns = 0
-        total_patterns = 0
-
-        for hist_action, hist_observation, hist_reward in self.action_history:
-            if hist_action.get("action_type") == action_type:
-                total_patterns += 1
-                if hist_reward > 0:  # Successful action
-                    successful_patterns += 1
-
-        if total_patterns == 0:
-            return 0.0
-
-        # Bonus based on success rate
-        success_rate = successful_patterns / total_patterns
-        if success_rate >= 0.8:
-            return 0.1  # High consistency bonus
-        elif success_rate >= 0.6:
-            return 0.05  # Medium consistency bonus
-        else:
-            return 0.0  # No consistency bonus
-
-    def _calculate_contradiction_penalty(
-        self, action: Dict[str, Any], observation: Dict[str, Any]
-    ) -> float:
-        """
-        Calculate penalty for actions that contradict previous decisions.
-
-        Args:
-            action: Current action
-            observation: Current observation
-
-        Returns:
-            Contradiction penalty
-        """
-        action_type = action.get("action_type", "skip")
-        column = action.get("column", "")
-
-        # Check for contradictions in recent history
-        recent_actions = self.action_history[-5:]  # Last 5 actions
-
-        for hist_action, hist_observation, _ in recent_actions:
-            # Contradiction: same column was recently modified differently.
-            if (
-                hist_action.get("column") == column
-                and hist_action.get("action_type") != action_type
-                and hist_action.get("action_type") != "skip"
-            ):
-                return -0.2  # Contradiction penalty
-
+            return 0.5
+        if final_score >= 0.7:
+            return 0.2
         return 0.0
-
-    def _calculate_issue_adjustment(
-        self, action: Dict[str, Any], observation: Dict[str, Any]
-    ) -> float:
-        """
-        Calculate issue-specific reward adjustments.
-
-        Args:
-            action: Current action
-            observation: Current observation
-
-        Returns:
-            Issue adjustment
-        """
-        action_type = action.get("action_type", "skip")
-        issues = observation.get("issues_detected", [])
-
-        adjustment = 0.0
-
-        for issue in issues:
-            if action_type == "fill_missing" and "missing:" in issue:
-                adjustment += 0.1  # Bonus for addressing missing values
-            elif action_type == "remove_duplicate" and "duplicate" in issue:
-                adjustment += 0.1  # Bonus for addressing duplicates
-            elif action_type == "remove_outlier" and "outlier" in issue:
-                adjustment += 0.1  # Bonus for addressing outliers
-            elif action_type == "fix_category" and (
-                "category" in issue or "formatting" in issue
-            ):
-                adjustment += 0.05  # Smaller bonus for category issues
-            elif action_type == "fix_type" and "type" in issue:
-                adjustment += 0.05  # Smaller bonus for type issues
-
-        return adjustment
-
-    def _calculate_skip_bonus(
-        self, action: Dict[str, Any], observation: Dict[str, Any]
-    ) -> float:
-        """
-        Calculate bonus for skip actions when appropriate.
-
-        Args:
-            action: Current action
-            observation: Current observation
-
-        Returns:
-            Skip bonus
-        """
-        if action.get("action_type") != "skip":
-            return 0.0
-
-        issues = observation.get("issues_detected", [])
-
-        # Bonus for skipping when there are no major issues
-        major_issues = ["missing:", "duplicate", "outlier"]
-        has_major_issues = any(
-            issue.startswith(prefix) for issue in issues for prefix in major_issues
-        )
-
-        if not has_major_issues:
-            return 0.1  # Bonus for appropriate skipping
-
-        return 0.0
-
-    def _calculate_magnitude_reward(
-        self, action: Dict[str, Any], observation: Dict[str, Any]
-    ) -> float:
-        """
-        Calculate magnitude-aware reward for IoT telemetry denoising.
-        Rewards error reduction proportionally: fixing large spikes/drift is worth more.
-        """
-        current_data = observation.get("current_data", {})
-        gt = current_data.get("ground_truth")
-        if gt is None:
-            return 0.0
-
-        raw_val = current_data.get("value")
-        raw_err = abs(float(raw_val) - float(gt)) if raw_val is not None else 4.0
-
-        action_type = action.get("action_type", "skip")
-        new_val = action.get("value")
-
-        if action_type == "skip":
-            if raw_err < 0.2:
-                return 0.15  # Well-placed skip on clean telemetry
-            else:
-                return -min(0.4, raw_err * 0.15)  # Penalize ignoring large error
-
-        if new_val is not None:
-            try:
-                new_err = abs(float(new_val) - float(gt))
-                delta = raw_err - new_err
-                if delta > 0:
-                    # Scaled bonus for reducing error
-                    return min(0.45, delta * 0.2)
-                else:
-                    # Penalty for making it worse
-                    return max(-0.35, delta * 0.2)
-            except (ValueError, TypeError):
-                return 0.0
-
-        return 0.0
-
-
-    def _update_tracking(
-        self, action: Dict[str, Any], observation: Dict[str, Any], reward: float
-    ) -> None:
-        """
-        Update internal tracking for future reward calculations.
-
-        Args:
-            action: Action taken
-            observation: Current observation
-            reward: Calculated reward
-        """
-        # Add to action history
-        self.action_history.append((action, observation, reward))
-
-        # Keep history manageable (last 100 actions)
-        if len(self.action_history) > 100:
-            self.action_history = self.action_history[-100:]
-
-        # Update issue-action mapping
-        action_type = action.get("action_type", "skip")
-        column = action.get("column", "")
-        issues = observation.get("issues_detected", [])
-
-        for issue in issues:
-            issue_key = f"{issue}:{column}"
-            self.issue_action_mapping[issue_key].append(
-                {
-                    "action": action_type,
-                    "reward": reward,
-                    "timestamp": len(self.action_history),
-                }
-            )
 
     def get_reward_statistics(self) -> Dict[str, Any]:
-        """
-        Get statistics about reward distribution.
-
-        Returns:
-            Reward statistics
-        """
-        if not self.action_history:
-            return {"total_actions": 0}
-
-        rewards = [reward for _, _, reward in self.action_history]
-
+        """Per-action reward summary for training diagnostics."""
         return {
-            "total_actions": len(rewards),
-            "average_reward": sum(rewards) / len(rewards),
-            "max_reward": max(rewards),
-            "min_reward": min(rewards),
-            "positive_actions": sum(1 for r in rewards if r > 0),
-            "negative_actions": sum(1 for r in rewards if r < 0),
-            "action_type_distribution": self._get_action_type_distribution(),
+            "total_reward": float(sum(self.reward_history)),
+            "steps": len(self.reward_history),
+            "mean_reward": (
+                float(sum(self.reward_history) / len(self.reward_history))
+                if self.reward_history
+                else 0.0
+            ),
+            "action_counts": {
+                a: len(rs) for a, rs in sorted(self.action_rewards.items())
+            },
+            "action_mean_reward": {
+                a: float(sum(rs) / len(rs))
+                for a, rs in sorted(self.action_rewards.items())
+                if rs
+            },
         }
-
-    def _get_action_type_distribution(self) -> Dict[str, Dict[str, float]]:
-        """Get reward distribution by action type."""
-        distribution = defaultdict(lambda: {"count": 0, "total_reward": 0.0})
-
-        for action, _, reward in self.action_history:
-            action_type = action.get("action_type", "skip")
-            distribution[action_type]["count"] += 1
-            distribution[action_type]["total_reward"] += reward
-
-        # Convert to averages
-        result = {}
-        for action_type, stats in distribution.items():
-            result[action_type] = {
-                "count": stats["count"],
-                "average_reward": stats["total_reward"] / stats["count"],
-                "total_reward": stats["total_reward"],
-            }
-
-        return result
