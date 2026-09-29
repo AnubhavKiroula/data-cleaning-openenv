@@ -49,6 +49,14 @@ removes 30.6% of the spike-family error with a cross-seed standard deviation of
 already near zero, so an equal-weight relative aggregate comes out at 1.082 —
 slightly worse than inaction.
 
+**A mean hides its variance.** Per window, over 750 test episodes, the policy
+improves 34%, leaves 31% unchanged and **damages 35%**. It improves roughly two
+spike and mixed windows in three, but damages seven dropout windows in ten. The
+aggregate gain is carried by a minority of windows holding large transients. A
+single window chosen at random evidences nothing, which is why
+`scripts/demo_window.py` defaults to a median-representative window and prints
+the population statistics beside it.
+
 Three findings worth reading before the headline:
 
 1. **No finite rejection threshold beats pass-through on this channel.** The
