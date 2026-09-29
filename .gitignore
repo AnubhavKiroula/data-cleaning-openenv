@@ -1,7 +1,6 @@
 # ---- Secrets: never commit ----
 .env
 .env.*
-!.env.example
 *.pem
 *.key
 credentials.json
@@ -47,6 +46,7 @@ Thumbs.db
 # ---- Run artifacts ----
 logs/
 *.log
+train_output.txt
 scratch/
 graphify-out/
 .graphifyignore
