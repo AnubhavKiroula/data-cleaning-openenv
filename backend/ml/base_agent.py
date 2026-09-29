@@ -1,8 +1,14 @@
 """
-Base Agent class for multi-agent data cleaning system.
+Abstract base class for the streaming denoising policy.
 
-This module defines the abstract base class that all specialist agents
-must inherit from, providing a common interface for agent operations.
+Defines the interface :class:`backend.ml.dqn_model.DQNAgent` implements: reset
+for a new episode, choose an action from an observation, report confidence, and
+absorb a reward.
+
+This module previously also carried an ``AgentFactory`` that constructed the
+multi-agent specialist ensemble of the pre-pivot application. The specialists
+are gone, so the factory has been removed rather than left to raise ImportError
+on its first call.
 """
 
 from abc import ABC, abstractmethod
@@ -96,54 +102,3 @@ class Agent(ABC):
     def get_last_reward(self) -> float:
         """Get the last reward received by this agent."""
         return self._last_reward
-
-
-class AgentFactory:
-    """Factory class for creating agent instances."""
-
-    @staticmethod
-    def create_agent(agent_type: str, **kwargs) -> Agent:
-        """
-        Create an agent instance of the specified type.
-
-        Args:
-            agent_type: Type of agent to create
-            **kwargs: Additional arguments for agent initialization
-
-        Returns:
-            Agent instance
-
-        Raises:
-            ValueError: If agent_type is not recognized
-        """
-        # Import specialist agents
-        from .specialist_agents import (
-            FillMissingAgent,
-            DuplicateDetector,
-            OutlierHandler,
-            CategoryStandardizer,
-            SkipAgent
-        )
-        
-        # Import DQN agent
-        try:
-            from .dqn_model import DQNAgent
-        except ImportError:
-            DQNAgent = None
-        
-        agent_classes = {
-            "fill_missing": FillMissingAgent,
-            "duplicate_detector": DuplicateDetector,
-            "outlier_handler": OutlierHandler,
-            "category_standardizer": CategoryStandardizer,
-            "skip": SkipAgent
-        }
-        
-        # Add DQN agent if available
-        if DQNAgent is not None:
-            agent_classes["dqn"] = DQNAgent
-        
-        if agent_type not in agent_classes:
-            raise ValueError(f"Unknown agent type: {agent_type}")
-        
-        return agent_classes[agent_type](**kwargs)
