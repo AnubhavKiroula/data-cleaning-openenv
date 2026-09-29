@@ -133,6 +133,16 @@ SENSOR = "CO(GT)"
 
 print(f"torch {torch.__version__} | CUDA available: {torch.cuda.is_available()}")
 print(f"Evaluating on {NUM_WINDOWS} windows of {WINDOW_SIZE} hours each")
+if IN_CI:
+    print()
+    print("NOTE: RL_CLEANSE_CI is set, so the window count is reduced from 30 to")
+    print("12 to keep the CI run short. The tables below will therefore NOT match")
+    print("the published figures in README.md and docs/PROFESSOR_BRIEFING.md,")
+    print("which are the 30-window run. Both are produced by the same code; the")
+    print("authoritative command is:")
+    print("    python -m backend.ml.evaluate_benchmarks --num-windows 30")
+    print("Run this notebook without RL_CLEANSE_CI to reproduce the published")
+    print("numbers exactly.")
 
 loader = UCIAirQualityLoader(target_col=SENSOR)
 train_df, test_df = loader.get_chronological_split(train_ratio=0.8, val_ratio=0.1)
