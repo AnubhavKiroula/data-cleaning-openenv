@@ -1,0 +1,239 @@
+{
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "epochs": 800,
+  "selected_seed": 5,
+  "runs": [
+    {
+      "seed": 1,
+      "best_epoch": 500,
+      "val_relative_mae": 0.9742696269579685,
+      "checkpoint": "models/dqn_iot_stream_best_seed1.pt",
+      "test": {
+        "by_corruption": {
+          "spike": {
+            "mae": 0.1827288142007619,
+            "raw_mae": 0.24123720462871348,
+            "score": 0.6864025396825397,
+            "error_reduction_pct": 20.67751885124881
+          },
+          "drift": {
+            "mae": 0.2582459513197048,
+            "raw_mae": 0.27319069616897,
+            "score": 0.5057466666666667,
+            "error_reduction_pct": 1.1491375630524057
+          },
+          "dropout": {
+            "mae": 0.11315872958013537,
+            "raw_mae": 0.09889492753623187,
+            "score": 0.5546077785445901,
+            "error_reduction_pct": -112.22200492167036
+          },
+          "duplicate": {
+            "mae": 0.03860297244355215,
+            "raw_mae": 0.03044466403162055,
+            "score": 0.5611097592209187,
+            "error_reduction_pct": -72.13071895424832
+          },
+          "mixed": {
+            "mae": 0.5177283258653353,
+            "raw_mae": 0.5332573515220894,
+            "score": 0.5205700000000001,
+            "error_reduction_pct": 3.5885491669151803
+          }
+        },
+        "mean_mae": 0.2220929586818979,
+        "mean_raw_mae": 0.2354049687775251,
+        "mean_score": 0.565687348822943,
+        "mean_relative_mae": 1.0171686769110824
+      }
+    },
+    {
+      "seed": 2,
+      "best_epoch": 775,
+      "val_relative_mae": 0.96434414639384,
+      "checkpoint": "models/dqn_iot_stream_best_seed2.pt",
+      "test": {
+        "by_corruption": {
+          "spike": {
+            "mae": 0.1897317410156851,
+            "raw_mae": 0.24123720462871348,
+            "score": 0.680807962962963,
+            "error_reduction_pct": 19.900108130023305
+          },
+          "drift": {
+            "mae": 0.2602218940521957,
+            "raw_mae": 0.27319069616897,
+            "score": 0.5140033333333334,
+            "error_reduction_pct": 2.8003076878591817
+          },
+          "dropout": {
+            "mae": 0.11262745737568926,
+            "raw_mae": 0.09889492753623187,
+            "score": 0.528253024691358,
+            "error_reduction_pct": -124.09503620937204
+          },
+          "duplicate": {
+            "mae": 0.03653562704338066,
+            "raw_mae": 0.03044466403162055,
+            "score": 0.5978241358024692,
+            "error_reduction_pct": -51.331723027375276
+          },
+          "mixed": {
+            "mae": 0.485576817790592,
+            "raw_mae": 0.5332573515220894,
+            "score": 0.5437166666666667,
+            "error_reduction_pct": 8.743363449712458
+          }
+        },
+        "mean_mae": 0.21693870745550853,
+        "mean_raw_mae": 0.2354049687775251,
+        "mean_score": 0.5729210246913581,
+        "mean_relative_mae": 0.997707132488485
+      }
+    },
+    {
+      "seed": 3,
+      "best_epoch": 400,
+      "val_relative_mae": 0.9806432399711607,
+      "checkpoint": "models/dqn_iot_stream_best_seed3.pt",
+      "test": {
+        "by_corruption": {
+          "spike": {
+            "mae": 0.17821782578690265,
+            "raw_mae": 0.24123720462871348,
+            "score": 0.6768053439153439,
+            "error_reduction_pct": 18.76094943346673
+          },
+          "drift": {
+            "mae": 0.26294309298440716,
+            "raw_mae": 0.27319069616897,
+            "score": 0.5072499999999999,
+            "error_reduction_pct": 1.449377999774881
+          },
+          "dropout": {
+            "mae": 0.11855826985033219,
+            "raw_mae": 0.09889492753623187,
+            "score": 0.5097804499271529,
+            "error_reduction_pct": -102.92367706006173
+          },
+          "duplicate": {
+            "mae": 0.03669279666924594,
+            "raw_mae": 0.03044466403162055,
+            "score": 0.5921701479947856,
+            "error_reduction_pct": -27.803878512318416
+          },
+          "mixed": {
+            "mae": 0.4753899762428055,
+            "raw_mae": 0.5332573515220894,
+            "score": 0.5426500000000001,
+            "error_reduction_pct": 8.528131175198755
+          }
+        },
+        "mean_mae": 0.21436039230673867,
+        "mean_raw_mae": 0.2354049687775251,
+        "mean_score": 0.5657311883674565,
+        "mean_relative_mae": 0.9993596253407431
+      }
+    },
+    {
+      "seed": 4,
+      "best_epoch": 775,
+      "val_relative_mae": 0.9857665863562615,
+      "checkpoint": "models/dqn_iot_stream_best_seed4.pt",
+      "test": {
+        "by_corruption": {
+          "spike": {
+            "mae": 0.1684808659248431,
+            "raw_mae": 0.24123720462871348,
+            "score": 0.673524074074074,
+            "error_reduction_pct": 18.489625296986212
+          },
+          "drift": {
+            "mae": 0.2620692420026443,
+            "raw_mae": 0.27319069616897,
+            "score": 0.5064966666666667,
+            "error_reduction_pct": 1.3000445992791712
+          },
+          "dropout": {
+            "mae": 0.11052079246572001,
+            "raw_mae": 0.09889492753623187,
+            "score": 0.5337146752549652,
+            "error_reduction_pct": -75.08187554355864
+          },
+          "duplicate": {
+            "mae": 0.04522294442004586,
+            "raw_mae": 0.03044466403162055,
+            "score": 0.5857563660762212,
+            "error_reduction_pct": -27.79285632381608
+          },
+          "mixed": {
+            "mae": 0.4596763308823471,
+            "raw_mae": 0.5332573515220894,
+            "score": 0.5642033333333333,
+            "error_reduction_pct": 12.841060051257518
+          }
+        },
+        "mean_mae": 0.20919403513912008,
+        "mean_raw_mae": 0.2354049687775251,
+        "mean_score": 0.5727390230810521,
+        "mean_relative_mae": 1.0245363956315487
+      }
+    },
+    {
+      "seed": 5,
+      "best_epoch": 450,
+      "val_relative_mae": 0.957527709321669,
+      "checkpoint": "models/dqn_iot_stream_best_seed5.pt",
+      "test": {
+        "by_corruption": {
+          "spike": {
+            "mae": 0.18010802262526965,
+            "raw_mae": 0.24123720462871348,
+            "score": 0.6882473544973545,
+            "error_reduction_pct": 21.33010845659318
+          },
+          "drift": {
+            "mae": 0.2600369529466211,
+            "raw_mae": 0.27319069616897,
+            "score": 0.5107700000000001,
+            "error_reduction_pct": 2.1551474723683963
+          },
+          "dropout": {
+            "mae": 0.11865566740280653,
+            "raw_mae": 0.09889492753623187,
+            "score": 0.5267019896020244,
+            "error_reduction_pct": -91.78229647664381
+          },
+          "duplicate": {
+            "mae": 0.03959807407825668,
+            "raw_mae": 0.03044466403162055,
+            "score": 0.5624490910512997,
+            "error_reduction_pct": -29.303064646911388
+          },
+          "mixed": {
+            "mae": 0.48039861676226464,
+            "raw_mae": 0.5332573515220894,
+            "score": 0.5423000000000001,
+            "error_reduction_pct": 8.458591607596615
+          }
+        },
+        "mean_mae": 0.21575946676304372,
+        "mean_raw_mae": 0.2354049687775251,
+        "mean_score": 0.5660936870301357,
+        "mean_relative_mae": 1.0199602627814721
+      }
+    }
+  ],
+  "val_relative_mae": {
+    "mean": 0.9725102618001799,
+    "std": 0.010355029309714736,
+    "min": 0.957527709321669,
+    "max": 0.9857665863562615
+  }
+}
