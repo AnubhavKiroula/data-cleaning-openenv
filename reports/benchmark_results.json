@@ -1,0 +1,281 @@
+{
+  "aggregate": {
+    "num_windows": 30,
+    "window_size": 24,
+    "split": "test",
+    "seed_base": 2026,
+    "models": [
+      "dqn_iot_stream_best_seed1.pt",
+      "dqn_iot_stream_best_seed2.pt",
+      "dqn_iot_stream_best_seed3.pt",
+      "dqn_iot_stream_best_seed4.pt",
+      "dqn_iot_stream_best_seed5.pt"
+    ],
+    "mean_raw_mae": 0.21698,
+    "mean_baseline_calibrated_mae": 0.21698,
+    "mean_baseline_textbook_mae": 0.48109999999999997,
+    "mean_rl_mae": 0.20023999999999997,
+    "baseline_calibrated_relative_mae": 1.0,
+    "baseline_textbook_relative_mae": 4.2774,
+    "rl_relative_mae": 1.0818
+  },
+  "table": [
+    {
+      "Corruption": "Spike",
+      "Raw MAE": 0.2317,
+      "Rule(cal) MAE": 0.2317,
+      "Rule(txt) MAE": 0.4795,
+      "RL MAE": 0.1608,
+      "RL std": 0.0037,
+      "Rule(cal) rel": 1.0,
+      "Rule(txt) rel": 2.069,
+      "RL rel": 0.694,
+      "RL red %": 30.6
+    },
+    {
+      "Corruption": "Drift",
+      "Raw MAE": 0.2743,
+      "Rule(cal) MAE": 0.2743,
+      "Rule(txt) MAE": 0.5351,
+      "RL MAE": 0.26,
+      "RL std": 0.0015,
+      "Rule(cal) rel": 1.0,
+      "Rule(txt) rel": 1.951,
+      "RL rel": 0.948,
+      "RL red %": 5.2
+    },
+    {
+      "Corruption": "Dropout",
+      "Raw MAE": 0.0627,
+      "Rule(cal) MAE": 0.0627,
+      "Rule(txt) MAE": 0.2861,
+      "RL MAE": 0.0946,
+      "RL std": 0.0018,
+      "Rule(cal) rel": 1.0,
+      "Rule(txt) rel": 4.559,
+      "RL rel": 1.507,
+      "RL red %": -50.7
+    },
+    {
+      "Corruption": "Duplicate",
+      "Raw MAE": 0.0299,
+      "Rule(cal) MAE": 0.0299,
+      "Rule(txt) MAE": 0.3351,
+      "RL MAE": 0.0401,
+      "RL std": 0.0036,
+      "Rule(cal) rel": 1.0,
+      "Rule(txt) rel": 11.225,
+      "RL rel": 1.344,
+      "RL red %": -34.4
+    },
+    {
+      "Corruption": "Mixed",
+      "Raw MAE": 0.4863,
+      "Rule(cal) MAE": 0.4863,
+      "Rule(txt) MAE": 0.7697,
+      "RL MAE": 0.4457,
+      "RL std": 0.0126,
+      "Rule(cal) rel": 1.0,
+      "Rule(txt) rel": 1.583,
+      "RL rel": 0.916,
+      "RL red %": 8.4
+    }
+  ],
+  "detail": {
+    "spike": {
+      "raw_mae": 0.23168031453963944,
+      "raw_rmse": 0.8013306430570921,
+      "baseline_mae_by_config": {
+        "calibrated": 0.23168031453963944,
+        "textbook": 0.4794570748400451
+      },
+      "baseline_scores_by_config": {
+        "calibrated": 0.55,
+        "textbook": 0.4287488888888889
+      },
+      "rl_per_seed": {
+        "dqn_iot_stream_best_seed1.pt": {
+          "mae": 0.16652870860141114,
+          "rmse": 0.5468604639381727,
+          "score": 0.6776677777777778
+        },
+        "dqn_iot_stream_best_seed2.pt": {
+          "mae": 0.15651656982023343,
+          "rmse": 0.5511916758156699,
+          "score": 0.7009044444444447
+        },
+        "dqn_iot_stream_best_seed3.pt": {
+          "mae": 0.15725402405485636,
+          "rmse": 0.5441709608335696,
+          "score": 0.7121644444444445
+        },
+        "dqn_iot_stream_best_seed4.pt": {
+          "mae": 0.16050274140879955,
+          "rmse": 0.5075192722157786,
+          "score": 0.6911766666666667
+        },
+        "dqn_iot_stream_best_seed5.pt": {
+          "mae": 0.1632318263479407,
+          "rmse": 0.5363266973814487,
+          "score": 0.6860066666666665
+        }
+      }
+    },
+    "drift": {
+      "raw_mae": 0.2742559226380472,
+      "raw_rmse": 0.46327453114497874,
+      "baseline_mae_by_config": {
+        "calibrated": 0.2742559226380472,
+        "textbook": 0.5351272707218013
+      },
+      "baseline_scores_by_config": {
+        "calibrated": 0.5,
+        "textbook": 0.20529666666666663
+      },
+      "rl_per_seed": {
+        "dqn_iot_stream_best_seed1.pt": {
+          "mae": 0.26102324151176476,
+          "rmse": 0.4425507448199479,
+          "score": 0.5159466666666667
+        },
+        "dqn_iot_stream_best_seed2.pt": {
+          "mae": 0.2591592438119935,
+          "rmse": 0.43946027813446287,
+          "score": 0.5204833333333333
+        },
+        "dqn_iot_stream_best_seed3.pt": {
+          "mae": 0.25839933435510204,
+          "rmse": 0.44184411797017603,
+          "score": 0.5205866666666668
+        },
+        "dqn_iot_stream_best_seed4.pt": {
+          "mae": 0.2625063211609477,
+          "rmse": 0.443151016511511,
+          "score": 0.5112866666666667
+        },
+        "dqn_iot_stream_best_seed5.pt": {
+          "mae": 0.25907788798405756,
+          "rmse": 0.4377664415667878,
+          "score": 0.51278
+        }
+      }
+    },
+    "dropout": {
+      "raw_mae": 0.06274959742351047,
+      "raw_rmse": 0.18467931179539815,
+      "baseline_mae_by_config": {
+        "calibrated": 0.06274959742351047,
+        "textbook": 0.28607487922705316
+      },
+      "baseline_scores_by_config": {
+        "calibrated": 0.6666666666666666,
+        "textbook": 0.3675502898550725
+      },
+      "rl_per_seed": {
+        "dqn_iot_stream_best_seed1.pt": {
+          "mae": 0.09635791522889352,
+          "rmse": 0.2991367754835222,
+          "score": 0.4938758937198068
+        },
+        "dqn_iot_stream_best_seed2.pt": {
+          "mae": 0.09106908879687144,
+          "rmse": 0.2661903456728936,
+          "score": 0.4998729710144928
+        },
+        "dqn_iot_stream_best_seed3.pt": {
+          "mae": 0.09519173559696345,
+          "rmse": 0.29607782433689767,
+          "score": 0.5243780676328503
+        },
+        "dqn_iot_stream_best_seed4.pt": {
+          "mae": 0.09464640530940878,
+          "rmse": 0.28159015979603447,
+          "score": 0.4769820289855073
+        },
+        "dqn_iot_stream_best_seed5.pt": {
+          "mae": 0.09563942489072925,
+          "rmse": 0.27972852682606864,
+          "score": 0.5208925120772947
+        }
+      }
+    },
+    "duplicate": {
+      "raw_mae": 0.029855072463768118,
+      "raw_rmse": 0.1261646870314021,
+      "baseline_mae_by_config": {
+        "calibrated": 0.029855072463768118,
+        "textbook": 0.33512882447665054
+      },
+      "baseline_scores_by_config": {
+        "calibrated": 0.6166666666666667,
+        "textbook": 0.29867333333333335
+      },
+      "rl_per_seed": {
+        "dqn_iot_stream_best_seed1.pt": {
+          "mae": 0.037024614676788595,
+          "rmse": 0.1433115023031573,
+          "score": 0.5082485507246377
+        },
+        "dqn_iot_stream_best_seed2.pt": {
+          "mae": 0.038503180354267315,
+          "rmse": 0.1497163969880038,
+          "score": 0.5763637922705314
+        },
+        "dqn_iot_stream_best_seed3.pt": {
+          "mae": 0.03764809063722107,
+          "rmse": 0.1513396680466698,
+          "score": 0.5477344444444444
+        },
+        "dqn_iot_stream_best_seed4.pt": {
+          "mae": 0.04703253968253968,
+          "rmse": 0.17178380720521672,
+          "score": 0.523652850241546
+        },
+        "dqn_iot_stream_best_seed5.pt": {
+          "mae": 0.040347020933977455,
+          "rmse": 0.14089991756529102,
+          "score": 0.49546666666666667
+        }
+      }
+    },
+    "mixed": {
+      "raw_mae": 0.4862777833924905,
+      "raw_rmse": 0.8509748795216723,
+      "baseline_mae_by_config": {
+        "calibrated": 0.4862777833924905,
+        "textbook": 0.769707626406301
+      },
+      "baseline_scores_by_config": {
+        "calibrated": 0.5,
+        "textbook": 0.36228666666666676
+      },
+      "rl_per_seed": {
+        "dqn_iot_stream_best_seed1.pt": {
+          "mae": 0.4700235941923877,
+          "rmse": 0.7933467097398441,
+          "score": 0.5083733333333333
+        },
+        "dqn_iot_stream_best_seed2.pt": {
+          "mae": 0.44091418577845887,
+          "rmse": 0.7384658408900158,
+          "score": 0.5494566666666666
+        },
+        "dqn_iot_stream_best_seed3.pt": {
+          "mae": 0.43375839331721266,
+          "rmse": 0.7184165726675452,
+          "score": 0.5547733333333332
+        },
+        "dqn_iot_stream_best_seed4.pt": {
+          "mae": 0.4402420403755869,
+          "rmse": 0.7240747540827716,
+          "score": 0.5433299999999999
+        },
+        "dqn_iot_stream_best_seed5.pt": {
+          "mae": 0.44341253234700023,
+          "rmse": 0.7381040152275359,
+          "score": 0.53365
+        }
+      }
+    }
+  }
+}
