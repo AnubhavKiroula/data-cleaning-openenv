@@ -1,63 +1,86 @@
-# Environment files with secrets
+# ---- Secrets: never commit ----
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.yaml
 
-# Python
+# ---- Python ----
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
 build/
-develop-eggs/
 dist/
-downloads/
+develop-eggs/
 eggs/
 .eggs/
-lib/
-lib64/
-parts/
 sdist/
-var/
 wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 
-# Virtual environments
-venv/
-ENV/
-env/
+# ---- Virtual environments ----
 .venv/
+venv/
+env/
+ENV/
 
-# IDE
+# ---- Tooling caches ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# ---- IDE / OS ----
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Logs
+# ---- Run artifacts ----
+logs/
 *.log
+scratch/
+graphify-out/
+.graphifyignore
 
-# Test artifacts
-.pytest_cache/
-.coverage
-htmlcov/
+# ---- Data ----
+# The 3.5 MB UCI CSV is tracked so the notebook and CI are self-contained.
+# The redundant .xlsx / .zip copies of the same data are not.
+data/air_quality/*.xlsx
+data/air_quality/*.zip
+# Legacy web-app upload directory.
+data/uploads/
 
-# Documentation files (local only)
-AGENTS.md
-INSTRUCTIONS.md
-QUICKSTART.md
-node_modules
-
-.venv/
+# ---- Model checkpoints ----
+# The reported RL-Cleanse checkpoints are tracked (~95 KB each) so that the
+# notebook reproduces the published multi-seed table on a fresh clone. Legacy
+# tabular checkpoints from the pre-pivot application are not.
 models/*.pt
-!models/dqn_iot_*.pt
-*.zip
-*.xlsx
+!models/dqn_iot_stream_best.pt
+!models/dqn_iot_stream_final.pt
+!models/dqn_iot_stream_best_seed*.pt
+models/dqn_easy_*
+# Per-seed training logs duplicate what dqn_iot_stream_seed_summary.json records.
+models/dqn_iot_stream_metrics_seed*.json
+models/dqn_easy_*_metrics.json
 
+# ---- Plots ----
+# Track only the three figures the write-ups cite.
+plots/dqn_training_curves_easy_*.png
+plots/dqn_iot_training_curves_seed*.png
 
+# ---- Reports ----
+reports/dqn_training_report_easy_*.json
+
+# ---- Legacy application state ----
+*.db
+data_cleaning.db
+node_modules/
