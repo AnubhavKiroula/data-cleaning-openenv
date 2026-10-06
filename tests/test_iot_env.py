@@ -326,6 +326,63 @@ class TestReward:
                 == baseline
             )
 
+    def test_action_cost_defaults_to_the_published_reward(self):
+        """action_cost=0.0 must reproduce master plan section 2.3 exactly."""
+        default = RewardShaper()
+        explicit = RewardShaper(action_cost=0.0)
+        for action in ACTION_SPACE:
+            for e_raw, e_clean in [(3.0, 0.1), (0.05, 0.5), (1.0, 1.0), (0.05, 0.05)]:
+                assert default.compute_stream_reward(
+                    action, e_raw, e_clean, record=False
+                ) == explicit.compute_stream_reward(
+                    action, e_raw, e_clean, record=False
+                )
+
+    def test_action_cost_is_charged_only_on_non_skip_actions(self):
+        free = RewardShaper(action_cost=0.0)
+        priced = RewardShaper(action_cost=0.1)
+
+        # Skipping is free regardless of the cost.
+        for e_raw in (0.05, 3.0):
+            assert priced.compute_stream_reward(
+                "skip", e_raw, e_raw, record=False
+            ) == free.compute_stream_reward("skip", e_raw, e_raw, record=False)
+
+        # Every other action pays it, helpful or not.
+        for action in [a for a in ACTION_SPACE if a != "skip"]:
+            for e_raw, e_clean in [(3.0, 0.1), (0.05, 0.5), (1.0, 1.0)]:
+                delta = free.compute_stream_reward(
+                    action, e_raw, e_clean, record=False
+                ) - priced.compute_stream_reward(
+                    action, e_raw, e_clean, record=False
+                )
+                assert delta == pytest.approx(0.1), action
+
+    def test_action_cost_keeps_rewards_bounded(self):
+        r = RewardShaper(action_cost=0.5)
+        for action in ACTION_SPACE:
+            for e_raw, e_clean in [(0.0, 1e6), (1e6, 0.0), (0.0, 0.0)]:
+                assert -1.0 <= r.compute_stream_reward(
+                    action, e_raw, e_clean, record=False
+                ) <= 1.0
+
+    def test_environment_passes_the_action_cost_to_its_shaper(self):
+        e = DataCleaningEnvironment(history_len=5, action_cost=0.08)
+        assert e.reward_shaper.action_cost == pytest.approx(0.08)
+        assert DataCleaningEnvironment().reward_shaper.action_cost == 0.0
+
+    def test_action_cost_changes_the_reward_the_environment_emits(self):
+        """A priced environment must pay strictly less for the same action."""
+        rewards = {}
+        for cost in (0.0, 0.1):
+            e = DataCleaningEnvironment(history_len=5, action_cost=cost)
+            e.reset(task_name="iot_stream", window_size=12, split="test", seed=31)
+            total = 0.0
+            while not e.done:
+                total += e.step("fix_type")["reward"]
+            rewards[cost] = total
+        assert rewards[0.1] < rewards[0.0]
+
     def test_environment_reward_is_consistent_with_the_shaper(self, env):
         obs = env.reset(
             task_name="iot_stream", window_size=24, split="test", seed=8

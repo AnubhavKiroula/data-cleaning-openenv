@@ -72,9 +72,14 @@ DEFAULT_HISTORY_LEN = 5
 class DataCleaningEnvironment:
     """Sequential, online sensor-stream denoising environment."""
 
-    def __init__(self, history_len: int = DEFAULT_HISTORY_LEN):
+    def __init__(
+        self,
+        history_len: int = DEFAULT_HISTORY_LEN,
+        action_cost: float = 0.0,
+    ):
         self.history_len = history_len
-        self.reward_shaper = RewardShaper()
+        self.action_cost = action_cost
+        self.reward_shaper = RewardShaper(action_cost=action_cost)
 
         self.episode_id: Optional[str] = None
         self.task_name: Optional[str] = None

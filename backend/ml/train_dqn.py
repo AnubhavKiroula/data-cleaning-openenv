@@ -70,6 +70,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "target_update_frequency": 5,
     "buffer_capacity": 10000,
     "history_len": 5,
+    # Fixed penalty for any non-skip action. 0.0 is the published reward.
+    "action_cost": 0.0,
     "grad_clip": 10.0,
     "seed": 42,
     "val_windows": 12,
@@ -120,7 +122,10 @@ class DQNTrainer:
         self.batch_size = self.config["batch_size"]
         self.gamma = self.config["gamma"]
 
-        self.env = DataCleaningEnvironment(history_len=self.config["history_len"])
+        self.env = DataCleaningEnvironment(
+            history_len=self.config["history_len"],
+            action_cost=self.config["action_cost"],
+        )
 
         self.metrics: Dict[str, List[Any]] = {
             "episode_rewards": [],
@@ -294,7 +299,10 @@ class DQNTrainer:
         restored on exit.
         """
         corruption_types = corruption_types or list(CORRUPTION_TYPES)
-        env = DataCleaningEnvironment(history_len=self.config["history_len"])
+        env = DataCleaningEnvironment(
+            history_len=self.config["history_len"],
+            action_cost=self.config["action_cost"],
+        )
         by_type: Dict[str, Dict[str, float]] = {}
 
         with self.agent.eval_mode():
@@ -578,6 +586,7 @@ def train_seeds(
     device: str = "auto",
     val_windows: int = 30,
     eval_every: int = 25,
+    action_cost: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Train one agent per seed, each selected on validation.
@@ -596,6 +605,7 @@ def train_seeds(
                 "val_windows": val_windows,
                 "eval_every": eval_every,
                 "checkpoint_suffix": f"_seed{seed}",
+                **({"action_cost": action_cost} if action_cost is not None else {}),
             }
         )
         result = trainer.train(epochs=epochs, save=True)
