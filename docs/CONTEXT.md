@@ -169,11 +169,31 @@ correction makes things worse. That is why it over-corrects streams needing
 nothing. `RewardShaper(action_cost=…)` charges a fixed penalty for any non-skip
 action; the default 0.0 reproduces §2.3 exactly.
 
-`backend/ml/sweep_action_cost.py` searches the cost **on validation**. Adopt a
-value only if it beats 0.0 there *and* the gap exceeds the combined seed spread.
-If none does, report it as an ablation and keep the published reward.
+`backend/ml/sweep_action_cost.py` searches the cost **on validation**.
 
-Implementation and tests are committed. The empirical answer is pending.
+**Result (3 seeds × 400 epochs, validation only):**
+
+| cost | 0.0 | 0.05 | 0.1 | 0.2 | **0.3** | 0.5 | 0.8 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| val rel-MAE | 1.0155 | 0.9925 | 0.9511 | 0.9188 | **0.9156** | 0.9225 | 0.9446 |
+| std | 0.0227 | 0.0481 | 0.0218 | 0.0051 | 0.0175 | 0.0078 | 0.0169 |
+
+The curve **turns** — the minimum at 0.3 is an interior point, not a grid
+boundary, so it is a real operating point rather than the degenerate "never act"
+solution that a large enough cost would produce. The gap against the published
+reward (+0.0999) is more than double the combined seed spread (0.0402).
+
+This is a genuine improvement and it crosses below 1.0, meaning a priced policy
+beats inaction on validation where the published one does not.
+
+**Not yet adopted.** Remaining steps, in order:
+
+1. Retrain 5 seeds at cost 0.3 for the full 800 epochs (~7 min on the RTX 4050).
+2. Evaluate on test **once**, and report whatever it gives — including if the
+   validation gain fails to transfer, which happened before (0.9725 validation
+   vs ~1.01 test for the published policy).
+3. If it holds, regenerate every artifact and update README, the briefing,
+   master plan §6.2 and the notebook **together** — all four quote the numbers.
 
 ---
 

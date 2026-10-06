@@ -1,0 +1,108 @@
+{
+  "epochs": 400,
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "val_windows": 30,
+  "results": [
+    {
+      "action_cost": 0.2,
+      "runs": [
+        {
+          "seed": 1,
+          "best_epoch": 350,
+          "val_relative_mae": 0.924764872858969
+        },
+        {
+          "seed": 2,
+          "best_epoch": 250,
+          "val_relative_mae": 0.912211866086345
+        },
+        {
+          "seed": 3,
+          "best_epoch": 200,
+          "val_relative_mae": 0.9194275808262141
+        }
+      ],
+      "mean": 0.9188014399238428,
+      "std": 0.005143833465461546,
+      "min": 0.912211866086345,
+      "max": 0.924764872858969
+    },
+    {
+      "action_cost": 0.3,
+      "runs": [
+        {
+          "seed": 1,
+          "best_epoch": 400,
+          "val_relative_mae": 0.9364609901008679
+        },
+        {
+          "seed": 2,
+          "best_epoch": 200,
+          "val_relative_mae": 0.8935751637601477
+        },
+        {
+          "seed": 3,
+          "best_epoch": 350,
+          "val_relative_mae": 0.9168631700783625
+        }
+      ],
+      "mean": 0.9156331079797928,
+      "std": 0.017529657057043967,
+      "min": 0.8935751637601477,
+      "max": 0.9364609901008679
+    },
+    {
+      "action_cost": 0.5,
+      "runs": [
+        {
+          "seed": 1,
+          "best_epoch": 400,
+          "val_relative_mae": 0.9334999070717966
+        },
+        {
+          "seed": 2,
+          "best_epoch": 400,
+          "val_relative_mae": 0.916033177192405
+        },
+        {
+          "seed": 3,
+          "best_epoch": 400,
+          "val_relative_mae": 0.9179173675574844
+        }
+      ],
+      "mean": 0.922483483940562,
+      "std": 0.007827674294355281,
+      "min": 0.916033177192405,
+      "max": 0.9334999070717966
+    },
+    {
+      "action_cost": 0.8,
+      "runs": [
+        {
+          "seed": 1,
+          "best_epoch": 200,
+          "val_relative_mae": 0.9658586148852892
+        },
+        {
+          "seed": 2,
+          "best_epoch": 400,
+          "val_relative_mae": 0.9435535849489712
+        },
+        {
+          "seed": 3,
+          "best_epoch": 300,
+          "val_relative_mae": 0.9245070879539969
+        }
+      ],
+      "mean": 0.9446397625960857,
+      "std": 0.016899152469836396,
+      "min": 0.9245070879539969,
+      "max": 0.9658586148852892
+    }
+  ],
+  "best_cost": 0.3
+}
