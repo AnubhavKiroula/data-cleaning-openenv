@@ -21,6 +21,13 @@ Two properties matter for the research claim:
   extreme spike cannot dominate an episode's return and destabilise the
   Bellman targets.
 
+An optional ``action_cost`` extends the specification: a fixed penalty charged
+for any non-skip action, whether or not it helped. The published reward uses
+0.0, which reproduces section 2.3 exactly. A positive cost prices intervention,
+so the policy must expect to gain more than the cost before acting -- the direct
+remedy for over-correcting streams that need nothing. See
+``backend/ml/sweep_action_cost.py``.
+
 The reward uses ground truth and is therefore a *training-time* signal only. It
 is not available at deployment, and nothing in it reaches the agent's
 observation — see ``DataCleaningEnvironment._make_observation``.
@@ -39,6 +46,10 @@ MAX_IMPROVEMENT_BONUS = 0.45
 MAX_DEGRADATION_PENALTY = 0.35
 REWARD_CLIP = 1.0
 
+#: Default cost charged for any corrective action, in reward units.
+#: 0.0 reproduces the master plan's reward exactly.
+DEFAULT_ACTION_COST = 0.0
+
 
 class RewardShaper:
     """Computes the magnitude-aware streaming denoising reward."""
@@ -53,7 +64,17 @@ class RewardShaper:
         "skip": -0.15,
     }
 
-    def __init__(self):
+    def __init__(self, action_cost: float = DEFAULT_ACTION_COST):
+        """
+        Args:
+            action_cost: Fixed penalty subtracted from every non-skip reward,
+                charged whether or not the action helped. Section 2.3 of the
+                master plan specifies no such cost, so 0.0 is the published
+                configuration. A positive cost makes intervention a decision
+                with a price rather than a free option, which is the direct
+                remedy for a policy that over-corrects streams needing nothing.
+        """
+        self.action_cost = float(action_cost)
         self.logger = logging.getLogger("RewardShaper")
         self.action_history = []
         self.reward_history = []
@@ -98,6 +119,9 @@ class RewardShaper:
                 reward = FALSE_CORRECTION_PENALTY - min(
                     MAX_DEGRADATION_PENALTY, MAGNITUDE_SCALE * (-delta)
                 )
+
+        if action_type != "skip":
+            reward -= self.action_cost
 
         reward = float(max(-REWARD_CLIP, min(REWARD_CLIP, reward)))
 
