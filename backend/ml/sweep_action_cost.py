@@ -115,7 +115,26 @@ def main() -> None:
               f"{delta:>10}{mark}")
 
     print("-" * 72)
-    if baseline and best["action_cost"] != 0.0 and best["mean"] < baseline["mean"]:
+    if baseline is None:
+        # Without cost 0.0 in the grid there is no comparison to the published
+        # reward, and claiming one would be a fabricated finding. Report the
+        # shape of the curve instead, which is what a grid without the baseline
+        # can actually support.
+        costs = [r["action_cost"] for r in sorted(results, key=lambda r: r["action_cost"])]
+        print("Cost 0.0 was not in this grid, so no comparison against the")
+        print("published reward is available from this run alone.")
+        interior = best["action_cost"] not in (min(costs), max(costs))
+        print(
+            f"Minimum at cost {best['action_cost']} "
+            f"({best['mean']:.4f}), which is "
+            + ("an INTERIOR point: the curve turns, so this is a real operating "
+               "point rather than a grid artifact."
+               if interior else
+               "on the grid BOUNDARY: extend the grid before treating it as an "
+               "optimum. A large enough cost makes pure-skip optimal, and "
+               "pure-skip is the do-nothing policy.")
+        )
+    elif best["action_cost"] != 0.0 and best["mean"] < baseline["mean"]:
         gap = baseline["mean"] - best["mean"]
         separated = gap > (best["std"] + baseline["std"])
         print(f"Best cost {best['action_cost']} improves validation relative-MAE "
