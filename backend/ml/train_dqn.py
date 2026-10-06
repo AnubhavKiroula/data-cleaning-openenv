@@ -502,9 +502,15 @@ class DQNTrainer:
             with open(metrics_path, "w") as fh:
                 json.dump(summary, fh, indent=2)
 
-        self.plot_training_curves(
-            save_path=f"plots/dqn_iot_training_curves{suffix or ''}.png"
-        )
+        if save:
+            # Gated on `save` for the same reason the checkpoint write is: with
+            # save=False and the default empty suffix this resolves to
+            # plots/dqn_iot_training_curves.png, so a sweep or a test run would
+            # silently overwrite the published figure with its own throwaway
+            # curve. The checkpoint had exactly this bug.
+            self.plot_training_curves(
+                save_path=f"plots/dqn_iot_training_curves{suffix or ''}.png"
+            )
 
         return {
             "training_time": training_time,

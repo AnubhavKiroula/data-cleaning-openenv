@@ -546,6 +546,15 @@ class TestTrainingPipeline:
             else []
         )
         assert written == [], f"train(save=False) wrote {written}"
+        # Same guarantee for figures: the training-curve plot used to be written
+        # unconditionally, so a sweep or test run overwrote the published
+        # plots/dqn_iot_training_curves.png with its own throwaway curve.
+        plotted = (
+            sorted(os.listdir(tmp_path / "plots"))
+            if (tmp_path / "plots").exists()
+            else []
+        )
+        assert plotted == [], f"train(save=False) wrote {plotted}"
         # The selected weights are still available, just in memory.
         assert result["best_state"] is not None
         assert result["best_model_path"] is None
