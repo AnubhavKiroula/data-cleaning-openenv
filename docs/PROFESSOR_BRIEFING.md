@@ -84,7 +84,9 @@ which one matters depends on the deployment.
 ### What we do not claim
 
 - We do **not** claim the agent learns drift dynamics. Its drift improvement is
-  5.2%, real but modest, and the rule filter's is zero by construction.
+  5.2%, which a paired test (section 4.2, item 5) cannot distinguish from
+  inaction at all (p = 0.31, CI spanning zero). The rule filter's is zero by
+  construction.
 - We do **not** claim a uniform win over inaction. See section 4.3.
 - We do **not** claim any hardware result. See section 5.
 
@@ -246,9 +248,64 @@ so 1.000 means no improvement and below 1.000 is a genuine gain.
    standard deviation of 0.0037 on an MAE of 0.1608 — roughly 2% relative spread
    across five independent training runs.
 
-4. **Soft correction is the mechanism.** The learned policy leans on `fix_type`,
-   the halfway-to-baseline action. It does not attempt to classify spikes, which
-   is the thing the online constraint makes impossible.
+4. **Selective abstention is the mechanism.** Measured over all 3,600 decision
+   steps per family on the held-out windows (`reports/action_distribution.json`),
+   the policy *declines to act* on 85–97% of samples, and its intervention rate
+   is context-dependent: 3.3% on duplicate, where there is least to win, against
+   14.6% on mixed, which carries the largest absolute error.
+
+   | Family | skip | fix_type | fix_category | fill_missing | acts on |
+   |---|---:|---:|---:|---:|---:|
+   | Spike | 92.5% | 1.8% | **2.4%** | 1.7% | 7.5% |
+   | Drift | 93.5% | **2.2%** | 1.9% | 1.0% | 6.5% |
+   | Dropout | 89.3% | **4.8%** | 1.9% | 1.5% | 10.7% |
+   | Duplicate | 96.7% | 0.8% | **1.1%** | 0.6% | 3.3% |
+   | Mixed | 85.4% | **6.1%** | 3.4% | 2.0% | 14.6% |
+
+   When it does act it prefers *bounded, partial* corrections — clamping to the
+   historical envelope on spikes, halfway-to-baseline on dropout and mixed.
+   `remove_outlier`, the action closest to what a Hampel filter does, is the
+   least-used action on every family. The policy is not solving the
+   classification problem the online constraint makes ill-posed; it is avoiding
+   it, by acting rarely and partially.
+
+   An earlier revision of this section claimed the policy "leans on `fix_type`".
+   That was asserted from the action space's design rather than measured, and
+   the measurement does not support it: on the spike family `fix_category`
+   leads. Corrected 2026-10-14.
+
+5. **It is significant against the rule filter, and conditional against
+   inaction.** Paired Wilcoxon signed-rank on per-window MAE, identical windows,
+   zeros dropped, Holm-corrected across the five families, with a percentile
+   bootstrap 95% CI on the mean difference (10,000 resamples). Negative favours
+   the policy. Regenerate with `python scripts/significance_test.py`; raw output
+   in `reports/significance.json`.
+
+   | Comparison | Mean diff | 95% CI | Median | p (Holm) |
+   |---|---:|---:|---:|---:|
+   | vs Rule(txt), pooled | −0.2809 | [−0.362, −0.209] | −0.1338 | 1.6e−17 |
+   | vs Rule(cal) ≡ do-nothing: | | | | |
+   | — Spike | −0.0709 | [−0.098, −0.045] | −0.0606 | 7.3e−05 |
+   | — Drift | −0.0142 | [−0.032, **+0.001**] | −0.0008 | **0.31 n.s.** |
+   | — Dropout | +0.0318 | [+0.018, +0.048] | +0.0151 | 7.1e−07 |
+   | — Duplicate | +0.0103 | [+0.005, +0.017] | +0.0038 | 1.7e−06 |
+   | — Mixed | −0.0406 | [−0.070, −0.014] | −0.0329 | 0.035 |
+   | — Pooled | −0.0167 | [−0.028, −0.006] | **+0.0008** | **0.49 n.s.** |
+
+   Three things change as a result. The central claim — better than rule-based
+   filtering — survives decisively (p = 1.6e−17 pooled, significant on every
+   family individually). **The drift improvement does not survive: +5.2% has a
+   CI spanning zero and p = 0.31, so it is withdrawn as a claim** and should be
+   reported as "indistinguishable from inaction". And the pooled row disagrees
+   with itself in an informative way: the mean difference is negative with a CI
+   excluding zero, while the median is *positive* and the signed-rank test is
+   n.s. Both are true — the benefit is carried by a minority of large-transient
+   windows. The damage on dropout and duplicate is systematic (p ≈ 1e−07,
+   1e−06), not variance.
+
+   Per-seed, pooled across families, only two of five checkpoints reach
+   significance against inaction alone (p = 0.0023, 0.0080; the others 0.23,
+   0.18, 0.13). Reported because the 5-seed mean alone overstates consistency.
 
 ### 4.3 What this does *not* support — three negative findings
 
@@ -449,7 +506,22 @@ generated with the bad model and were regenerated. The best weights are now held
 in memory and written only when `save=True`, and two regression tests assert
 that `train(save=False)` writes nothing at all.
 
-All six are fixed, each has a named regression test, and the tests assert the
+A **seventh** defect, found 2026-10-14 while verifying an unrelated change, is
+the sixth one again in a second code path. When the best-checkpoint write was
+moved inside the `if save:` guard, the `plot_training_curves` call immediately
+below it was left outside. So `train(epochs=12, save=False)` — the fixture that
+most of the training test class runs — kept overwriting the *published*
+`plots/dqn_iot_training_curves.png` with a 12-epoch CPU curve, while the
+checkpoint beside it was correctly left alone. It surfaced as a stray `M` on
+that file in `git status` after a test run that should have been read-only.
+
+It is worth recording for two reasons. Fixing the instance is not the same as
+fixing the class: the audit moved one write inside the guard and did not check
+whether anything else in the same function also wrote. And the regression test
+for defect six asserted only that `models/` stayed empty, so it could not have
+caught this; it now asserts `plots/` stays empty too.
+
+All seven are fixed, each has a named regression test, and the tests assert the
 specific failure rather than the general area. The current table is worse than
 the fabricated one on several rows. It is also real.
 

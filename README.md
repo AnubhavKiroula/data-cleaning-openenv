@@ -31,7 +31,7 @@ for every method, aggregated over 5 independently trained seeds.
 | Fault family | Do-nothing MAE | Rule(cal) MAE | Rule(txt) MAE | RL MAE | RL std | RL rel | RL reduction |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Electrical spike | 0.2317 | 0.2317 | 0.4795 | **0.1608** | 0.0037 | **0.694** | **+30.6%** |
-| Calibration drift | 0.2743 | 0.2743 | 0.5351 | **0.2600** | 0.0015 | **0.948** | +5.2% |
+| Calibration drift | 0.2743 | 0.2743 | 0.5351 | 0.2600 | 0.0015 | 0.948 | +5.2% n.s. |
 | Transmission dropout | **0.0627** | 0.0627 | 0.2861 | 0.0946 | 0.0018 | 1.507 | −50.7% |
 | Duplicate packet | **0.0299** | 0.0299 | 0.3351 | 0.0401 | 0.0036 | 1.344 | −34.4% |
 | Mixed real-world | 0.4863 | 0.4863 | 0.7697 | **0.4457** | 0.0126 | **0.916** | +8.4% |
@@ -56,6 +56,24 @@ aggregate gain is carried by a minority of windows holding large transients. A
 single window chosen at random evidences nothing, which is why
 `scripts/demo_window.py` defaults to a median-representative window and prints
 the population statistics beside it.
+
+**And a mean needs a test.** Paired Wilcoxon signed-rank on identical windows,
+Holm-corrected across families, with bootstrap CIs
+(`python scripts/significance_test.py`, raw output in
+`reports/significance.json`):
+
+- vs `Rule(txt)`: significant on **every** family and pooled — mean −0.2809,
+  CI [−0.362, −0.209], p = 1.6e−17. The headline claim holds.
+- vs inaction: **spike** (p = 7.3e−05) and **mixed** (p = 0.035) improve;
+  **drift does not** (p = 0.31, CI spans zero — the +5.2% is withdrawn);
+  **dropout** (p = 7.1e−07) and **duplicate** (p = 1.7e−06) are significantly
+  *worse*, which is systematic damage rather than variance.
+- pooled vs inaction, the statistics disagree and both are reported: mean
+  −0.0167 with CI [−0.028, −0.006] excluding zero, but median **+0.0008** and
+  p = 0.49. The policy reduces error on average; the typical window is not
+  improved.
+
+Per-seed, only 2 of 5 checkpoints beat inaction significantly on their own.
 
 Three findings worth reading before the headline:
 
@@ -128,7 +146,12 @@ envs/data_cleaning_env/
 
 tests/                     test_data_loader.py, test_iot_env.py, test_dqn_training.py
 docs/                      PROFESSOR_BRIEFING.md, HARDWARE_SETUP.md, RESEARCH_PIVOT_MASTER_PLAN.md
-scripts/live_iot_inference.py   Serial/replay inference bridge
+scripts/
+  live_iot_inference.py    Serial/replay inference bridge
+  significance_test.py     Paired Wilcoxon + bootstrap CIs on per-window MAE
+  plot_significance.py     Per-window delta distribution figure
+  action_distribution.py   What the policy actually does, counted
+  demo_window.py           Median-representative window demo
 tools/build_notebook.py    Regenerates the demo notebook
 RL-Cleanse_demo.ipynb      Primary graded artifact
 ```
@@ -149,9 +172,11 @@ was violated by an earlier revision of this repository:
   `backend/ml/metrics.py`. An un-imputed dropout is charged for, not filtered out
   of the average.
 
-`docs/PROFESSOR_BRIEFING.md` section 7 documents the five defects that
-invalidated the first set of results, and the regression tests that now guard
-each one.
+`docs/PROFESSOR_BRIEFING.md` section 7 documents the seven defects found during
+the audit and after it, and the regression tests that now guard each one. The
+seventh is the sixth in a second code path: a figure write left outside the
+`if save:` guard, so the test suite overwrote a published plot. Fixing an
+instance is not fixing the class.
 
 **No physical hardware has been tested.** `docs/HARDWARE_SETUP.md` section 0 is a
 per-component table of what is implemented, designed, simulated or planned.

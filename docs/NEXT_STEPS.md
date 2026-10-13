@@ -14,7 +14,8 @@ executing top to bottom.
 absolute MAE 0.2002 against 0.2170 (calibrated rule filter) and 0.4811
 (textbook rule filter), and neither rule configuration beats doing nothing at
 all. It does **not** beat inaction uniformly: it improves spike (+30.6%), mixed
-(+8.4%) and drift (+5.2%), and damages dropout (−50.7%) and duplicate (−34.4%),
+(+8.4%), does not measurably change drift (+5.2% nominal, p = 0.31 — not
+significant), and damages dropout (−50.7%) and duplicate (−34.4%),
 whose raw error was already near zero. Per window, 34% improve, 31% are
 unchanged, 35% are damaged.
 
@@ -55,10 +56,13 @@ notebook all quote them, and all four must be updated together.
 
 ## Other work, in rough priority order
 
-1. **Paired significance test** across seeds and windows, replacing comparison
-   of means. With 35% of windows damaged, a mean difference of 0.017 needs a
-   test before it can be called an effect. This is the cheapest credibility win
-   available and needs no retraining.
+1. ~~**Paired significance test**~~ — **done 2026-10-14**, see
+   `scripts/significance_test.py` and `reports/significance.json`. Outcome: the
+   win over the textbook rule filter is significant everywhere (pooled
+   p = 1.6e−17); the drift gain is not significant and has been withdrawn; the
+   dropout and duplicate damage is significant; and pooled against inaction the
+   mean favours the policy while the median does not (p = 0.49). Briefing
+   section 4.2 item 5 has the table.
 2. **A Kalman-filter baseline.** The briefing already concedes this is a fair
    request and that its absence is a gap. It brackets the learned policy from
    the classical side.
