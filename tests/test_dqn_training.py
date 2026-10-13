@@ -546,6 +546,18 @@ class TestTrainingPipeline:
             else []
         )
         assert written == [], f"train(save=False) wrote {written}"
+
+        # The same guard, for figures. The plot call sat outside the `save`
+        # block after the checkpoint write had been moved inside it, so the
+        # test suite kept overwriting plots/dqn_iot_training_curves.png with a
+        # 12-epoch curve while the checkpoint was correctly left alone. One
+        # defect, two code paths; this asserts the second.
+        plots_written = (
+            sorted(os.listdir(tmp_path / "plots"))
+            if (tmp_path / "plots").exists()
+            else []
+        )
+        assert plots_written == [], f"train(save=False) wrote {plots_written}"
         # The selected weights are still available, just in memory.
         assert result["best_state"] is not None
         assert result["best_model_path"] is None
