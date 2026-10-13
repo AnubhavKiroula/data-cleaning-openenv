@@ -494,9 +494,17 @@ class DQNTrainer:
             with open(metrics_path, "w") as fh:
                 json.dump(summary, fh, indent=2)
 
-        self.plot_training_curves(
-            save_path=f"plots/dqn_iot_training_curves{suffix or ''}.png"
-        )
+            # Inside the `save` guard, and deliberately so. This call used to
+            # sit outside it -- the same defect as the best-checkpoint write,
+            # in a second place. Every run of the test suite does
+            # train(epochs=12, save=False) with the default empty suffix, so
+            # the published training-curve figure was being overwritten with a
+            # 12-epoch CPU curve, exactly as the checkpoint had been. A
+            # training run that is told not to persist anything must persist
+            # nothing, figures included.
+            self.plot_training_curves(
+                save_path=f"plots/dqn_iot_training_curves{suffix or ''}.png"
+            )
 
         return {
             "training_time": training_time,
