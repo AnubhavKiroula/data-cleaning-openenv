@@ -1,0 +1,62 @@
+{
+  "spike": {
+    "steps": 3600,
+    "pct_by_action": {
+      "skip": 92.5,
+      "fix_category": 2.4,
+      "fix_type": 1.8,
+      "fill_missing": 1.7,
+      "remove_duplicate": 0.9,
+      "remove_outlier": 0.6
+    },
+    "intervention_rate_pct": 7.5
+  },
+  "drift": {
+    "steps": 3600,
+    "pct_by_action": {
+      "skip": 93.5,
+      "fix_type": 2.2,
+      "fix_category": 1.9,
+      "fill_missing": 1.0,
+      "remove_duplicate": 0.9,
+      "remove_outlier": 0.4
+    },
+    "intervention_rate_pct": 6.5
+  },
+  "dropout": {
+    "steps": 3600,
+    "pct_by_action": {
+      "skip": 89.3,
+      "fix_type": 4.8,
+      "fix_category": 1.9,
+      "remove_duplicate": 1.6,
+      "fill_missing": 1.5,
+      "remove_outlier": 1.0
+    },
+    "intervention_rate_pct": 10.7
+  },
+  "duplicate": {
+    "steps": 3600,
+    "pct_by_action": {
+      "skip": 96.7,
+      "fix_category": 1.1,
+      "fix_type": 0.8,
+      "fill_missing": 0.6,
+      "remove_duplicate": 0.6,
+      "remove_outlier": 0.2
+    },
+    "intervention_rate_pct": 3.3
+  },
+  "mixed": {
+    "steps": 3600,
+    "pct_by_action": {
+      "skip": 85.4,
+      "fix_type": 6.1,
+      "fix_category": 3.4,
+      "fill_missing": 2.0,
+      "remove_duplicate": 1.6,
+      "remove_outlier": 1.4
+    },
+    "intervention_rate_pct": 14.6
+  }
+}
