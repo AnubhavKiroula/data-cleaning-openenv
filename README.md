@@ -1,6 +1,13 @@
+![RL-Cleanse banner: a corrupted IoT sensor window, the reference signal, and the learned policy's output over the same 24 hours](assets/banner.svg)
+
 # RL-Cleanse
 
 **Reinforcement learning for online denoising of noisy IoT sensor streams.**
+
+The trace in the banner is not line art. It is the spike-family test window
+`scripts/demo_window.py` defaults to — the one whose error reduction sits nearest
+the family median — rolled through the published checkpoint, raw MAE 0.2262
+against 0.1961. Regenerate it with `python scripts/make_banner.py`.
 
 A research project for technIEEEks'26 (Embedded Systems & IoT). The question:
 
@@ -151,6 +158,7 @@ scripts/
   significance_test.py     Paired Wilcoxon + bootstrap CIs on per-window MAE
   plot_significance.py     Per-window delta distribution figure
   action_distribution.py   What the policy actually does, counted
+  make_banner.py           Regenerates assets/banner.svg from the checkpoint
   demo_window.py           Median-representative window demo
 tools/build_notebook.py    Regenerates the demo notebook
 RL-Cleanse_demo.ipynb      Primary graded artifact

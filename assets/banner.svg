@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="RL-Cleanse banner: a corrupted IoT sensor window, the reference signal, and the learned policy's output over the same 24 hours">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B1F33"/>
+      <stop offset="1" stop-color="#13314F"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0B1F33" stop-opacity="1"/>
+      <stop offset="1" stop-color="#0B1F33" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="320" fill="url(#bg)"/>
+
+  <!-- panel -->
+  <g>
+        <line x1="660" y1="118.0" x2="1152" y2="118.0" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1"/>
+    <line x1="660" y1="162.0" x2="1152" y2="162.0" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1"/>
+    <line x1="660" y1="206.0" x2="1152" y2="206.0" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1"/>
+    <!-- reference signal -->
+    <polyline points="660.0,184.4 681.4,177.8 702.8,187.6 724.2,181.1 745.6,171.3 767.0,164.7 788.3,168.0 809.7,115.6 831.1,86.1 852.5,164.7 873.9,190.9 895.3,190.9 916.7,190.9 938.1,187.6 959.5,188.1 980.9,188.6 1002.3,189.0 1023.7,189.5 1045.0,190.0 1066.4,190.4 1087.8,190.9 1109.2,184.4 1130.6,161.4 1152.0,141.8" fill="none"
+              stroke="#8FA6BC" stroke-width="2" stroke-opacity="0.55"
+              stroke-dasharray="5 4"/>
+    <!-- corrupted input -->
+    <polyline points="660.0,184.4 681.4,177.8 702.8,187.6 724.2,181.1 745.6,171.3 767.0,164.7 788.3,168.0 809.7,216.9 831.1,86.1 852.5,164.7 873.9,190.9 895.3,190.9 916.7,190.9 938.1,187.6 959.5,188.1 980.9,188.6 1002.3,189.0 1023.7,189.5 1045.0,190.0 1066.4,190.4 1087.8,190.9 1109.2,184.4 1130.6,237.9 1152.0,141.8" fill="none"
+              stroke="#F4A259" stroke-width="2.2" stroke-opacity="0.9"/>
+        <circle cx="809.7" cy="216.9" r="3.4" fill="#F4A259" fill-opacity="0.95"/>
+    <circle cx="1130.6" cy="237.9" r="3.4" fill="#F4A259" fill-opacity="0.95"/>
+    <!-- policy output -->
+    <polyline points="660.0,184.4 681.4,177.8 702.8,184.4 724.2,181.1 745.6,171.3 767.0,164.7 788.3,168.0 809.7,195.4 831.1,86.1 852.5,164.7 873.9,173.3 895.3,174.2 916.7,173.3 938.1,187.6 959.5,187.6 980.9,188.6 1002.3,189.0 1023.7,189.5 1045.0,188.6 1066.4,190.4 1087.8,190.4 1109.2,184.4 1130.6,178.3 1152.0,141.8" fill="none"
+              stroke="#2A9D8F" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+
+  <!-- legend -->
+  <g font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
+    <line x1="660" y1="272" x2="682" y2="272" stroke="#F4A259" stroke-width="2.2"/>
+    <text x="690" y="276" fill="#9FB3C8">corrupted input</text>
+    <line x1="818" y1="272" x2="840" y2="272" stroke="#8FA6BC" stroke-width="2" stroke-dasharray="5 4" stroke-opacity="0.7"/>
+    <text x="848" y="276" fill="#9FB3C8">reference</text>
+    <line x1="938" y1="272" x2="960" y2="272" stroke="#2A9D8F" stroke-width="3"/>
+    <text x="968" y="276" fill="#9FB3C8">RL-Cleanse output</text>
+  </g>
+
+  <!-- left fade, so the trace never crowds the wordmark -->
+  <rect x="596" y="0" width="92" height="252" fill="url(#fade)"/>
+
+  <!-- title -->
+  <g font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="60" y="132" fill="#FFFFFF" font-size="52" font-weight="700">RL-Cleanse</text>
+    <text x="62" y="172" fill="#2EC4B6" font-size="20" font-weight="500">Learned sequential correction of noisy IoT sensor streams</text>
+    <text x="62" y="202" fill="#9FB3C8" font-size="14.5">Double DQN &#183; strictly causal, O(1) memory &#183; 11,206 parameters &#183; UCI Air Quality</text>
+    <text x="62" y="226" fill="#9FB3C8" font-size="14.5" fill-opacity="0.8">Real test window, drawn from the published checkpoint</text>
+  </g>
+</svg>
